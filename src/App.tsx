@@ -11,6 +11,7 @@ import HowItWorksPage from "./pages/HowItWorksPage";
 import PricingPage from "./pages/PricingPage";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
+import Dashboard from "./pages/dashboard/Dashboard";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,9 @@ const App = () => (
           {/* Auth routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          
+          {/* Dashboard routes */}
+          <Route path="/dashboard" element={<Dashboard />} />
           
           {/* Service routes */}
           <Route path="/services/:serviceType" element={<ServicesPage />} />
