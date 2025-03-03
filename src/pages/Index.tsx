@@ -98,7 +98,7 @@ const Index = () => {
               >
                 <div className="flex items-center space-x-3">
                   <div className="bg-primary/10 rounded-md p-2.5 text-primary">
-                    <serviceIcons[index % serviceIcons.length] className="h-6 w-6" />
+                    {React.createElement(serviceIcons[index % serviceIcons.length], { className: "h-6 w-6" })}
                   </div>
                   <h3 className="text-xl font-semibold">{category.title}</h3>
                 </div>
