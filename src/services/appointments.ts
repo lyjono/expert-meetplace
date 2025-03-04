@@ -52,7 +52,7 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
     // Transform data to match the component's expected format
     return data.map(item => ({
       id: item.id,
-      expert: item.provider_profiles.name,
+      expert: item.provider_profiles?.name || 'Unknown Expert', // Fixed: Access name property properly
       service: item.service,
       date: item.date,
       time: item.time,
