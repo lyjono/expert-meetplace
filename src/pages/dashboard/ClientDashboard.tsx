@@ -6,13 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Calendar, MessageSquare, Users, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 
-const Dashboard = () => {
-  const userType = "user"; // This would normally come from your auth context
-
+const ClientDashboard = () => {
   return (
-    <DashboardLayout userType={userType}>
+    <DashboardLayout userType="user">
       <div className="grid gap-4">
-        <h1 className="text-3xl font-bold tracking-tight">Welcome to your Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Welcome to your Client Dashboard</h1>
         <p className="text-muted-foreground">
           Here's an overview of your account activity and upcoming appointments.
         </p>
@@ -92,21 +90,29 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <Button className="w-full justify-start" variant="outline">
-                <Calendar className="mr-2 h-4 w-4" />
-                Schedule an Appointment
+              <Button asChild className="w-full justify-start" variant="outline">
+                <Link to="/dashboard/appointments">
+                  <Calendar className="mr-2 h-4 w-4" />
+                  Schedule an Appointment
+                </Link>
               </Button>
-              <Button className="w-full justify-start" variant="outline">
-                <Users className="mr-2 h-4 w-4" />
-                Find an Expert
+              <Button asChild className="w-full justify-start" variant="outline">
+                <Link to="/dashboard/find-experts">
+                  <Users className="mr-2 h-4 w-4" />
+                  Find an Expert
+                </Link>
               </Button>
-              <Button className="w-full justify-start" variant="outline">
-                <MessageSquare className="mr-2 h-4 w-4" />
-                View Messages
+              <Button asChild className="w-full justify-start" variant="outline">
+                <Link to="/dashboard/messages">
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  View Messages
+                </Link>
               </Button>
-              <Button className="w-full justify-start" variant="outline">
-                <FileText className="mr-2 h-4 w-4" />
-                Upload Document
+              <Button asChild className="w-full justify-start" variant="outline">
+                <Link to="/dashboard/documents">
+                  <FileText className="mr-2 h-4 w-4" />
+                  Upload Document
+                </Link>
               </Button>
             </div>
           </CardContent>
@@ -116,4 +122,4 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard;
+export default ClientDashboard;

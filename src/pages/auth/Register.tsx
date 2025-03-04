@@ -31,6 +31,10 @@ const Register = () => {
     try {
       // This would be a real registration call in a production app
       await new Promise((resolve) => setTimeout(resolve, 1000));
+      
+      // Store the user type in localStorage
+      localStorage.setItem("userType", userType);
+      
       toast.success("Registration successful! Please check your email for verification.");
       
       // Redirect to login
