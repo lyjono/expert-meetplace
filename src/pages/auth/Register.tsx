@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { MainLayout } from "@/components/layout/main-layout";
@@ -11,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowRight, AtSign, Lock, User, Check } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -21,6 +21,8 @@ const Register = () => {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
+  const [specialty, setSpecialty] = useState("");
+  const [experience, setExperience] = useState("");
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
 
@@ -29,9 +31,47 @@ const Register = () => {
     setLoading(true);
 
     try {
-      // This would be a real registration call in a production app
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
+      // Register with Supabase auth
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            user_type: userType,
+            full_name: name,
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      // Store additional provider data if registering as a provider
+      if (userType === "provider" && data.user) {
+        const { error: profileError } = await supabase
+          .from('provider_profiles')
+          .insert({
+            user_id: data.user.id,
+            name,
+            email,
+            category,
+            specialty,
+            years_experience: parseInt(experience) || 0,
+          });
+
+        if (profileError) throw profileError;
+      } else if (data.user) {
+        // Store basic client info
+        const { error: clientError } = await supabase
+          .from('client_profiles')
+          .insert({
+            user_id: data.user.id,
+            name,
+            email,
+          });
+
+        if (clientError) throw clientError;
+      }
+
       // Store the user type in localStorage
       localStorage.setItem("userType", userType);
       
@@ -39,8 +79,9 @@ const Register = () => {
       
       // Redirect to login
       navigate("/login");
-    } catch (error) {
-      toast.error("Registration failed. Please try again.");
+    } catch (error: any) {
+      console.error("Registration error:", error);
+      toast.error(error.message || "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -214,6 +255,8 @@ const Register = () => {
                     <Input
                       id="specialty"
                       placeholder="e.g., Corporate Law, Tax Planning"
+                      value={specialty}
+                      onChange={(e) => setSpecialty(e.target.value)}
                       required
                     />
                   </div>
@@ -224,6 +267,8 @@ const Register = () => {
                       type="number"
                       min="0"
                       placeholder="5"
+                      value={experience}
+                      onChange={(e) => setExperience(e.target.value)}
                       required
                     />
                   </div>

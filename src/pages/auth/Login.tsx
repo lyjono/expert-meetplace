@@ -11,6 +11,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 const formSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -31,17 +32,32 @@ const Login = () => {
   });
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    // In a real app, you would send the credentials to your backend
-    console.log("Login form values:", values);
-    
-    // Simulate login delay
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    // Show success message
-    toast.success("Login successful!");
-    
-    // Redirect to dashboard
-    navigate("/dashboard");
+    try {
+      // Sign in with Supabase auth
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: values.email,
+        password: values.password,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      // Get user type from Supabase user metadata
+      const userType = data.user?.user_metadata?.user_type || 'client';
+      
+      // Store the user type in localStorage for the redirect component to use
+      localStorage.setItem("userType", userType);
+      
+      // Show success message
+      toast.success("Login successful!");
+      
+      // Redirect to dashboard
+      navigate("/dashboard");
+    } catch (error: any) {
+      console.error("Login error:", error);
+      toast.error(error.message || "Failed to login. Please try again.");
+    }
   };
 
   return (
