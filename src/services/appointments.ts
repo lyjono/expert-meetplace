@@ -1,6 +1,5 @@
 
-import { supabase } from '@/lib/supabase';
-import { getCurrentUser } from '@/lib/supabase';
+import { query, getCurrentUser } from '@/lib/database';
 
 export interface Appointment {
   id: string;
@@ -18,41 +17,36 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
     if (!user) throw new Error('User not authenticated');
 
     // Get the client profile ID
-    const { data: clientProfile } = await supabase
-      .from('client_profiles')
-      .select('id')
-      .eq('user_id', user.id)
-      .single();
+    const clientResult = await query(
+      'SELECT id FROM client_profiles WHERE user_id = $1',
+      [user.id]
+    );
 
-    if (!clientProfile) throw new Error('Client profile not found');
+    if (clientResult.rows.length === 0) throw new Error('Client profile not found');
+    const clientId = clientResult.rows[0].id;
 
-    // Query for appointments
-    let query = supabase
-      .from('appointments')
-      .select(`
-        id,
-        service,
-        date,
-        time,
-        status,
-        method,
-        provider_profiles!inner(name)
-      `)
-      .eq('client_id', clientProfile.id);
-
+    // Build the SQL query
+    let sql = `
+      SELECT a.id, a.service, a.date, a.time, a.status, a.method, p.name as expert_name
+      FROM appointments a
+      JOIN provider_profiles p ON a.provider_id = p.id
+      WHERE a.client_id = $1
+    `;
+    
+    const params = [clientId];
+    
     // Add status filter if provided
     if (status) {
-      query = query.eq('status', status);
+      sql += ' AND a.status = $2';
+      params.push(status);
     }
-
-    const { data, error } = await query;
-
-    if (error) throw error;
+    
+    const { rows } = await query(sql, params);
 
     // Transform data to match the component's expected format
-    return data.map(item => ({
+    return rows.map(item => ({
       id: item.id,
-      expert: item.provider_profiles?.name || 'Unknown Expert', // Fixed: Access name property properly
+      expert: item.expert_name || 'Unknown Expert',
       service: item.service,
       date: item.date,
       time: item.time,
@@ -67,13 +61,12 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
 
 export const cancelAppointment = async (appointmentId: string): Promise<boolean> => {
   try {
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status: 'canceled' })
-      .eq('id', appointmentId);
+    const result = await query(
+      'UPDATE appointments SET status = $1 WHERE id = $2',
+      ['canceled', appointmentId]
+    );
 
-    if (error) throw error;
-    return true;
+    return result.rowCount > 0;
   } catch (error) {
     console.error('Error canceling appointment:', error);
     return false;

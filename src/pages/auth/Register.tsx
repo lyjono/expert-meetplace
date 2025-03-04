@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowRight, AtSign, Lock, User, Check } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { signUp } from "@/lib/database";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -31,51 +31,23 @@ const Register = () => {
     setLoading(true);
 
     try {
-      // Register with Supabase auth
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            user_type: userType,
-            full_name: name,
-          },
-        },
-      });
+      // Register with our new database auth
+      const userData = {
+        user_type: userType,
+        full_name: name,
+        category,
+        specialty,
+        years_experience: parseInt(experience) || 0,
+      };
+      
+      const { user, error } = await signUp(email, password, userData);
 
-      if (error) throw error;
-
-      // Store additional provider data if registering as a provider
-      if (userType === "provider" && data.user) {
-        const { error: profileError } = await supabase
-          .from('provider_profiles')
-          .insert({
-            user_id: data.user.id,
-            name,
-            email,
-            category,
-            specialty,
-            years_experience: parseInt(experience) || 0,
-          });
-
-        if (profileError) throw profileError;
-      } else if (data.user) {
-        // Store basic client info
-        const { error: clientError } = await supabase
-          .from('client_profiles')
-          .insert({
-            user_id: data.user.id,
-            name,
-            email,
-          });
-
-        if (clientError) throw clientError;
-      }
+      if (error) throw new Error(error.message);
 
       // Store the user type in localStorage
       localStorage.setItem("userType", userType);
       
-      toast.success("Registration successful! Please check your email for verification.");
+      toast.success("Registration successful! You can now log in.");
       
       // Redirect to login
       navigate("/login");

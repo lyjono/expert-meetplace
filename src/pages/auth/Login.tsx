@@ -1,4 +1,3 @@
-
 import React from "react";
 import { MainLayout } from "@/components/layout/main-layout";
 import { Button } from "@/components/ui/button";
@@ -11,7 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { signInWithPassword } from "@/lib/database";
 
 const formSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -33,18 +32,15 @@ const Login = () => {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      // Sign in with Supabase auth
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: values.email,
-        password: values.password,
-      });
+      // Sign in with our new database auth
+      const { user, error } = await signInWithPassword(values.email, values.password);
 
       if (error) {
-        throw error;
+        throw new Error(error.message);
       }
 
-      // Get user type from Supabase user metadata
-      const userType = data.user?.user_metadata?.user_type || 'client';
+      // Get user type from user data
+      const userType = user?.user_type || 'client';
       
       // Store the user type in localStorage for the redirect component to use
       localStorage.setItem("userType", userType);
