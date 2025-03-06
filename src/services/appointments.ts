@@ -1,3 +1,4 @@
+
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser, getUserProfile } from '@/lib/supabase';
 
@@ -18,7 +19,13 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
     if (!user) throw new Error('User not authenticated');
 
     // Get the client profile ID
-    const clientProfile = await getUserProfile();
+    const { data: clientProfile, error: profileError } = await supabase
+      .from('client_profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+      
+    if (profileError) throw profileError;
     if (!clientProfile) throw new Error('Client profile not found');
 
     // Query for appointments
@@ -53,7 +60,7 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
     // Transform data to match the component's expected format
     return data.map(item => ({
       id: item.id,
-      expert: item.provider_profiles?.[0]?.name || 'Unknown Expert',
+      expert: item.provider_profiles?.name || 'Unknown Expert',
       service: item.service,
       date: item.date,
       time: item.time,
@@ -72,7 +79,13 @@ export const getProviderAppointments = async (status?: string): Promise<Appointm
     if (!user) throw new Error('User not authenticated');
 
     // Get the provider profile ID
-    const providerProfile = await getUserProfile();
+    const { data: providerProfile, error: profileError } = await supabase
+      .from('provider_profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+      
+    if (profileError) throw profileError;
     if (!providerProfile) throw new Error('Provider profile not found');
 
     // Query for appointments
@@ -108,7 +121,7 @@ export const getProviderAppointments = async (status?: string): Promise<Appointm
     return data.map(item => ({
       id: item.id,
       expert: 'You', // Since this is the provider's view
-      client: item.client_profiles?.[0]?.name || 'Unknown Client',
+      client: item.client_profiles?.name || 'Unknown Client',
       service: item.service,
       date: item.date,
       time: item.time,
@@ -133,7 +146,13 @@ export const createAppointment = async (
     if (!user) throw new Error('User not authenticated');
 
     // Get the client profile ID
-    const clientProfile = await getUserProfile();
+    const { data: clientProfile, error: profileError } = await supabase
+      .from('client_profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .single();
+      
+    if (profileError) throw profileError;
     if (!clientProfile) throw new Error('Client profile not found');
 
     // Create appointment

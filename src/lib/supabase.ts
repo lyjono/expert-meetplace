@@ -2,48 +2,15 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Get environment variables
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://iquwxwsmkhsneqsdaurh.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxdXd4d3Nta2hzbmVxc2RhdXJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDEyOTc2MjcsImV4cCI6MjA1Njg3MzYyN30.oxh6d4xZv0sqmJYnqRzdPRM-BW3FHd0nMxxahk8yK70';
 
-// Check if environment variables are set
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
-}
-
-// Create a mock Supabase client if env vars are missing
-const createMockClient = () => {
-  console.log('Using mock Supabase client. Set environment variables for full functionality.');
-  
-  // Return a mock client with empty implementations of common methods
-  return {
-    auth: {
-      getUser: async () => ({ data: { user: null }, error: null }),
-      getSession: async () => ({ data: { session: null }, error: null }),
-      signIn: async () => ({ data: null, error: new Error('Mock Supabase client') }),
-      signUp: async () => ({ data: null, error: new Error('Mock Supabase client') }),
-      signOut: async () => ({ error: null }),
-    },
-    from: () => ({
-      select: () => ({ data: [], error: null, eq: () => ({ data: [], error: null }) }),
-      insert: () => ({ data: null, error: null }),
-      update: () => ({ data: null, error: null }),
-      delete: () => ({ data: null, error: null }),
-    }),
-  };
-};
-
-// Create the Supabase client with fallback to mock
-export const supabase = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : createMockClient() as any;
+// Create the Supabase client
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Helper functions
 export const getCurrentUser = async () => {
   try {
-    if (!supabaseUrl || !supabaseAnonKey) {
-      return null;
-    }
-    
     const { data, error } = await supabase.auth.getUser();
     if (error) throw error;
     return data.user;
@@ -57,10 +24,6 @@ export const getUserProfile = async () => {
   try {
     const user = await getCurrentUser();
     if (!user) return null;
-
-    if (!supabaseUrl || !supabaseAnonKey) {
-      return { id: 'mock-id', name: 'Mock User', email: user.email };
-    }
     
     const { data, error } = await supabase
       .from('profiles')

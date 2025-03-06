@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useState } from "react";
 import { MainLayout } from "@/components/layout/main-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ const formSchema = z.object({
 
 const Login = () => {
   const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(false);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -33,6 +34,8 @@ const Login = () => {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
+      setIsLoading(true);
+      
       // Sign in with Supabase auth
       const { data, error } = await supabase.auth.signInWithPassword({
         email: values.email,
@@ -57,6 +60,8 @@ const Login = () => {
     } catch (error: any) {
       console.error("Login error:", error);
       toast.error(error.message || "Failed to login. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -124,8 +129,8 @@ const Login = () => {
                     Forgot password?
                   </Link>
                 </div>
-                <Button type="submit" className="w-full">
-                  {form.formState.isSubmitting ? "Logging in..." : "Log in"}
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? "Logging in..." : "Log in"}
                 </Button>
               </form>
             </Form>
