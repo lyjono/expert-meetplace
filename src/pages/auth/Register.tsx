@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { MainLayout } from "@/components/layout/main-layout";
@@ -45,6 +46,9 @@ const Register = () => {
 
       if (error) throw error;
 
+      // Store the user type in localStorage
+      localStorage.setItem("userType", userType);
+
       // Store additional provider data if registering as a provider
       if (userType === "provider" && data.user) {
         const { error: profileError } = await supabase
@@ -58,7 +62,12 @@ const Register = () => {
             years_experience: parseInt(experience) || 0,
           });
 
-        if (profileError) throw profileError;
+        if (profileError) {
+          console.error("Provider profile error:", profileError);
+          toast.error("Could not create provider profile. Please try again.");
+          setLoading(false);
+          return;
+        }
       } else if (data.user) {
         // Store basic client info
         const { error: clientError } = await supabase
@@ -69,11 +78,13 @@ const Register = () => {
             email,
           });
 
-        if (clientError) throw clientError;
+        if (clientError) {
+          console.error("Client profile error:", clientError);
+          toast.error("Could not create client profile. Please try again.");
+          setLoading(false);
+          return;
+        }
       }
-
-      // Store the user type in localStorage
-      localStorage.setItem("userType", userType);
       
       toast.success("Registration successful! Please check your email for verification.");
       
