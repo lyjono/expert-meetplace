@@ -1,4 +1,3 @@
-
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser, getUserProfile } from '@/lib/supabase';
 
@@ -10,6 +9,7 @@ export interface Appointment {
   time: string;
   status: 'confirmed' | 'pending' | 'canceled' | 'completed';
   method: 'video' | 'in-person';
+  client?: string;
 }
 
 export const getClientAppointments = async (status?: string): Promise<Appointment[]> => {
@@ -53,7 +53,7 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
     // Transform data to match the component's expected format
     return data.map(item => ({
       id: item.id,
-      expert: item.provider_profiles?.name || 'Unknown Expert',
+      expert: item.provider_profiles?.[0]?.name || 'Unknown Expert',
       service: item.service,
       date: item.date,
       time: item.time,
@@ -108,7 +108,7 @@ export const getProviderAppointments = async (status?: string): Promise<Appointm
     return data.map(item => ({
       id: item.id,
       expert: 'You', // Since this is the provider's view
-      client: item.client_profiles?.name || 'Unknown Client',
+      client: item.client_profiles?.[0]?.name || 'Unknown Client',
       service: item.service,
       date: item.date,
       time: item.time,
