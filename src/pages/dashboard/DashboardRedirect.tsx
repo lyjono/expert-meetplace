@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
-import { getUserType } from "@/lib/database";
+import { getUserType } from "@/lib/supabase";
 
 const DashboardRedirect = () => {
   const navigate = useNavigate();
@@ -12,7 +12,7 @@ const DashboardRedirect = () => {
   useEffect(() => {
     const checkUserType = async () => {
       try {
-        // Get user type from database (falling back to localStorage if not yet in DB)
+        // Get user type from Supabase (falling back to localStorage if not yet in DB)
         const userTypeFromDb = await getUserType();
         const userType = userTypeFromDb || localStorage.getItem("userType") || "client";
         

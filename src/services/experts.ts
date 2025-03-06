@@ -1,5 +1,5 @@
 
-import { query } from '@/lib/database';
+import { supabase } from '@/lib/supabase';
 
 export interface Expert {
   id: string;
@@ -15,22 +15,23 @@ export const searchExperts = async (
   category?: string
 ): Promise<Expert[]> => {
   try {
-    let sql = 'SELECT * FROM provider_profiles WHERE 1=1';
-    const params: any[] = [];
-    
+    let query = supabase
+      .from('provider_profiles')
+      .select('*');
+
     if (searchTerm) {
-      sql += ' AND (name ILIKE $1 OR specialty ILIKE $1)';
-      params.push(`%${searchTerm}%`);
+      query = query.or(`name.ilike.%${searchTerm}%,specialty.ilike.%${searchTerm}%`);
     }
-    
+
     if (category) {
-      sql += ` AND category = $${params.length + 1}`;
-      params.push(category);
+      query = query.eq('category', category);
     }
-    
-    const { rows } = await query(sql, params);
-    
-    return rows.map(expert => ({
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    return data.map(expert => ({
       id: expert.id,
       name: expert.name,
       specialty: expert.specialty || '',
@@ -46,11 +47,15 @@ export const searchExperts = async (
 
 export const getRecommendedExperts = async (): Promise<Expert[]> => {
   try {
-    const { rows } = await query(
-      'SELECT * FROM provider_profiles ORDER BY rating DESC LIMIT 3'
-    );
-    
-    return rows.map(expert => ({
+    const { data, error } = await supabase
+      .from('provider_profiles')
+      .select('*')
+      .order('rating', { ascending: false })
+      .limit(3);
+
+    if (error) throw error;
+
+    return data.map(expert => ({
       id: expert.id,
       name: expert.name,
       specialty: expert.specialty || '',
