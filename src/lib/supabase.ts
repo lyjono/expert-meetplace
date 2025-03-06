@@ -1,80 +1,77 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Supabase configuration
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Get environment variables
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// Check if environment variables are set
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+  console.warn('Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
 }
 
-// Create a single supabase client for the entire app
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Create a mock Supabase client if env vars are missing
+const createMockClient = () => {
+  console.log('Using mock Supabase client. Set environment variables for full functionality.');
+  
+  // Return a mock client with empty implementations of common methods
+  return {
+    auth: {
+      getUser: async () => ({ data: { user: null }, error: null }),
+      getSession: async () => ({ data: { session: null }, error: null }),
+      signIn: async () => ({ data: null, error: new Error('Mock Supabase client') }),
+      signUp: async () => ({ data: null, error: new Error('Mock Supabase client') }),
+      signOut: async () => ({ error: null }),
+    },
+    from: () => ({
+      select: () => ({ data: [], error: null, eq: () => ({ data: [], error: null }) }),
+      insert: () => ({ data: null, error: null }),
+      update: () => ({ data: null, error: null }),
+      delete: () => ({ data: null, error: null }),
+    }),
+  };
+};
 
-// Helper to get current user
+// Create the Supabase client with fallback to mock
+export const supabase = supabaseUrl && supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : createMockClient() as any;
+
+// Helper functions
 export const getCurrentUser = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
-  return user;
+  try {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return null;
+    }
+    
+    const { data, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    return data.user;
+  } catch (error) {
+    console.error('Error getting current user:', error);
+    return null;
+  }
 };
 
-// Helper to determine user type from Supabase metadata
-export const getUserType = async () => {
-  const user = await getCurrentUser();
-  if (!user) return null;
-  
-  // First check user_metadata
-  if (user.user_metadata && user.user_metadata.user_type) {
-    return user.user_metadata.user_type;
-  }
-  
-  // If not in metadata, check our database tables
-  // Check if user exists in provider_profiles
-  const { data: providerData } = await supabase
-    .from('provider_profiles')
-    .select('id')
-    .eq('user_id', user.id)
-    .single();
-    
-  if (providerData) {
-    return 'provider';
-  }
-  
-  // Check if user exists in client_profiles
-  const { data: clientData } = await supabase
-    .from('client_profiles')
-    .select('id')
-    .eq('user_id', user.id)
-    .single();
-    
-  if (clientData) {
-    return 'client';
-  }
-  
-  // Default to client if we can't determine
-  return 'client';
-};
-
-// Helper to get user profile based on type
 export const getUserProfile = async () => {
-  const user = await getCurrentUser();
-  if (!user) return null;
-  
-  const userType = await getUserType();
-  
-  if (userType === 'provider') {
-    const { data } = await supabase
-      .from('provider_profiles')
+  try {
+    const user = await getCurrentUser();
+    if (!user) return null;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return { id: 'mock-id', name: 'Mock User', email: user.email };
+    }
+    
+    const { data, error } = await supabase
+      .from('profiles')
       .select('*')
       .eq('user_id', user.id)
       .single();
+      
+    if (error) throw error;
     return data;
-  } else {
-    const { data } = await supabase
-      .from('client_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
-    return data;
+  } catch (error) {
+    console.error('Error getting user profile:', error);
+    return null;
   }
 };
