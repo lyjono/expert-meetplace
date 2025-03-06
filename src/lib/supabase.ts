@@ -75,3 +75,26 @@ export const getUserProfile = async () => {
     return null;
   }
 };
+
+// Get user type (client or provider) from localStorage or user metadata
+export const getUserType = async (): Promise<string> => {
+  try {
+    // First check localStorage (this is set during login)
+    const localUserType = localStorage.getItem("userType");
+    if (localUserType) {
+      return localUserType;
+    }
+    
+    // If not in localStorage, try to get from user metadata
+    const user = await getCurrentUser();
+    if (user && user.user_metadata && user.user_metadata.user_type) {
+      return user.user_metadata.user_type;
+    }
+    
+    // Default to client if not found
+    return 'client';
+  } catch (error) {
+    console.error('Error getting user type:', error);
+    return 'client';
+  }
+};
