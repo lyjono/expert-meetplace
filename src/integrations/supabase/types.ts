@@ -126,6 +126,59 @@ export type Database = {
         }
         Relationships: []
       }
+      leads: {
+        Row: {
+          created_at: string | null
+          date: string
+          email: string
+          id: string
+          image_url: string | null
+          message: string | null
+          name: string
+          phone: string | null
+          provider_id: string | null
+          service: string
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          date: string
+          email: string
+          id?: string
+          image_url?: string | null
+          message?: string | null
+          name: string
+          phone?: string | null
+          provider_id?: string | null
+          service: string
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          date?: string
+          email?: string
+          id?: string
+          image_url?: string | null
+          message?: string | null
+          name?: string
+          phone?: string | null
+          provider_id?: string | null
+          service?: string
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "provider_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           content: string

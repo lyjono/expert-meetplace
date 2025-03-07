@@ -77,6 +77,7 @@ const Leads = () => {
             </Card>
           )}
         </TabsContent>
+        
         <TabsContent value="contacted" className="mt-4">
           {isLoading ? (
             <p>Loading leads...</p>
@@ -98,6 +99,7 @@ const Leads = () => {
             </Card>
           )}
         </TabsContent>
+        
         <TabsContent value="qualified" className="mt-4">
           {isLoading ? (
             <p>Loading leads...</p>
@@ -119,6 +121,7 @@ const Leads = () => {
             </Card>
           )}
         </TabsContent>
+        
         <TabsContent value="converted" className="mt-4">
           {isLoading ? (
             <p>Loading leads...</p>
@@ -189,6 +192,11 @@ const LeadCard = ({ lead, onUpdateStatus }: LeadCardProps) => {
           <p>
             <strong>Date:</strong> {lead.date}
           </p>
+          {lead.phone && (
+            <p>
+              <strong>Phone:</strong> {lead.phone}
+            </p>
+          )}
         </div>
         <p className="text-sm mb-4">{lead.message}</p>
         <div className="flex flex-wrap gap-2">

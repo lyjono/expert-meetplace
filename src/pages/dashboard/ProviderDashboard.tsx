@@ -1,12 +1,21 @@
 
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar, MessageSquare, Users, FileText, TrendingUp, DollarSign, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
+import { getLeadCounts } from "@/services/leads";
 
 const ProviderDashboard = () => {
+  const { data: leadCounts = { new: 0, contacted: 0, qualified: 0, converted: 0 }, isLoading: isLoadingLeads } = useQuery({
+    queryKey: ['leadCounts'],
+    queryFn: getLeadCounts,
+  });
+
+  const totalLeads = Object.values(leadCounts).reduce((sum, count) => sum + count, 0);
+  
   return (
     <DashboardLayout userType="provider">
       <div className="grid gap-4">
@@ -35,9 +44,9 @@ const ProviderDashboard = () => {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">8</div>
+            <div className="text-2xl font-bold">{isLoadingLeads ? "..." : leadCounts.new}</div>
             <p className="text-xs text-muted-foreground">
-              4 new leads today
+              {isLoadingLeads ? "Loading..." : `${totalLeads} total leads`}
             </p>
           </CardContent>
         </Card>
