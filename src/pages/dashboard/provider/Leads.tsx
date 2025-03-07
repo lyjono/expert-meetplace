@@ -96,8 +96,9 @@ const LeadCard = ({ lead }: LeadCardProps) => {
                 ? "secondary"
                 : lead.status === "qualified"
                 ? "outline"
-                : "success"
+                : "destructive"
             }
+            className={lead.status === "converted" ? "bg-green-500 hover:bg-green-600 text-white border-transparent" : ""}
           >
             {lead.status.charAt(0).toUpperCase() + lead.status.slice(1)}
           </Badge>
