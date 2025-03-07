@@ -49,8 +49,12 @@ const Register = () => {
       // Store the user type in localStorage
       localStorage.setItem("userType", userType);
 
-      // Store additional provider data if registering as a provider
+      // We need to wait for the user to be properly created before inserting profile data
+      // Adding a small delay to ensure auth data is properly propagated
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       if (userType === "provider" && data.user) {
+        // Store additional provider data if registering as a provider
         const { error: profileError } = await supabase
           .from('provider_profiles')
           .insert({
@@ -70,6 +74,7 @@ const Register = () => {
         }
       } else if (data.user) {
         // Store basic client info
+        console.log("Creating client profile for user:", data.user.id);
         const { error: clientError } = await supabase
           .from('client_profiles')
           .insert({
@@ -80,7 +85,7 @@ const Register = () => {
 
         if (clientError) {
           console.error("Client profile error:", clientError);
-          toast.error("Could not create client profile. Please try again.");
+          toast.error(`Profile creation failed: ${clientError.message || "Unknown error"}`);
           setLoading(false);
           return;
         }
