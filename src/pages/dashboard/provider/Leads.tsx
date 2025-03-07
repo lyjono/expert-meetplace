@@ -1,13 +1,41 @@
 
-import React from "react";
+import React, { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Lead, getLeadsByStatus, updateLeadStatus } from "@/services/leads";
+import { toast } from "sonner";
 
 const Leads = () => {
+  const [activeTab, setActiveTab] = useState("new");
+  const queryClient = useQueryClient();
+
+  const { data: leads = [], isLoading } = useQuery({
+    queryKey: ['leads', activeTab],
+    queryFn: () => getLeadsByStatus(activeTab),
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ leadId, newStatus }: { leadId: string; newStatus: string }) => 
+      updateLeadStatus(leadId, newStatus),
+    onSuccess: () => {
+      toast.success("Lead status updated successfully");
+      // Invalidate queries to refetch data
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+    onError: () => {
+      toast.error("Failed to update lead status");
+    }
+  });
+
+  const handleUpdateStatus = (leadId: string, newStatus: string) => {
+    updateStatusMutation.mutate({ leadId, newStatus });
+  };
+
   return (
     <DashboardLayout userType="provider">
       <div className="grid gap-4">
@@ -17,7 +45,11 @@ const Leads = () => {
         </p>
       </div>
 
-      <Tabs defaultValue="new" className="mt-6">
+      <Tabs 
+        value={activeTab} 
+        onValueChange={setActiveTab} 
+        className="mt-6"
+      >
         <TabsList>
           <TabsTrigger value="new">New Leads</TabsTrigger>
           <TabsTrigger value="contacted">Contacted</TabsTrigger>
@@ -25,55 +57,100 @@ const Leads = () => {
           <TabsTrigger value="converted">Converted</TabsTrigger>
         </TabsList>
         <TabsContent value="new" className="mt-4">
-          <div className="grid gap-4">
-            {newLeads.map((lead) => (
-              <LeadCard key={lead.id} lead={lead} />
-            ))}
-          </div>
+          {isLoading ? (
+            <p>Loading leads...</p>
+          ) : leads.length > 0 ? (
+            <div className="grid gap-4">
+              {leads.map((lead) => (
+                <LeadCard 
+                  key={lead.id} 
+                  lead={lead} 
+                  onUpdateStatus={handleUpdateStatus}
+                />
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <p className="text-muted-foreground">No new leads found</p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
         <TabsContent value="contacted" className="mt-4">
-          <div className="grid gap-4">
-            {contactedLeads.map((lead) => (
-              <LeadCard key={lead.id} lead={lead} />
-            ))}
-          </div>
+          {isLoading ? (
+            <p>Loading leads...</p>
+          ) : leads.length > 0 ? (
+            <div className="grid gap-4">
+              {leads.map((lead) => (
+                <LeadCard 
+                  key={lead.id} 
+                  lead={lead}
+                  onUpdateStatus={handleUpdateStatus}
+                />
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <p className="text-muted-foreground">No contacted leads found</p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
         <TabsContent value="qualified" className="mt-4">
-          <div className="grid gap-4">
-            {qualifiedLeads.map((lead) => (
-              <LeadCard key={lead.id} lead={lead} />
-            ))}
-          </div>
+          {isLoading ? (
+            <p>Loading leads...</p>
+          ) : leads.length > 0 ? (
+            <div className="grid gap-4">
+              {leads.map((lead) => (
+                <LeadCard 
+                  key={lead.id} 
+                  lead={lead}
+                  onUpdateStatus={handleUpdateStatus}
+                />
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <p className="text-muted-foreground">No qualified leads found</p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
         <TabsContent value="converted" className="mt-4">
-          <div className="grid gap-4">
-            {convertedLeads.map((lead) => (
-              <LeadCard key={lead.id} lead={lead} />
-            ))}
-          </div>
+          {isLoading ? (
+            <p>Loading leads...</p>
+          ) : leads.length > 0 ? (
+            <div className="grid gap-4">
+              {leads.map((lead) => (
+                <LeadCard 
+                  key={lead.id} 
+                  lead={lead}
+                  onUpdateStatus={handleUpdateStatus}
+                />
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <p className="text-muted-foreground">No converted leads found</p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </DashboardLayout>
   );
 };
 
-interface Lead {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  service: string;
-  status: "new" | "contacted" | "qualified" | "converted";
-  date: string;
-  message: string;
-  image?: string;
-}
-
 interface LeadCardProps {
   lead: Lead;
+  onUpdateStatus: (leadId: string, newStatus: string) => void;
 }
 
-const LeadCard = ({ lead }: LeadCardProps) => {
+const LeadCard = ({ lead, onUpdateStatus }: LeadCardProps) => {
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -120,17 +197,29 @@ const LeadCard = ({ lead }: LeadCardProps) => {
             Schedule Call
           </Button>
           {lead.status === "new" && (
-            <Button size="sm" variant="secondary">
+            <Button 
+              size="sm" 
+              variant="secondary"
+              onClick={() => onUpdateStatus(lead.id, "contacted")}
+            >
               Mark as Contacted
             </Button>
           )}
           {lead.status === "contacted" && (
-            <Button size="sm" variant="secondary">
+            <Button 
+              size="sm" 
+              variant="secondary"
+              onClick={() => onUpdateStatus(lead.id, "qualified")}
+            >
               Mark as Qualified
             </Button>
           )}
           {lead.status === "qualified" && (
-            <Button size="sm" variant="secondary">
+            <Button 
+              size="sm" 
+              variant="secondary"
+              onClick={() => onUpdateStatus(lead.id, "converted")}
+            >
               Convert to Client
             </Button>
           )}
@@ -139,68 +228,5 @@ const LeadCard = ({ lead }: LeadCardProps) => {
     </Card>
   );
 };
-
-// Sample data for the different lead categories
-const newLeads: Lead[] = [
-  {
-    id: "1",
-    name: "Michael Brown",
-    email: "michael.brown@example.com",
-    phone: "(555) 123-4567",
-    service: "Tax Planning",
-    status: "new",
-    date: "July 15, 2023",
-    message: "I'm looking for help with tax planning for my small business. I'd like to schedule a consultation to discuss strategies for the upcoming tax year.",
-  },
-  {
-    id: "2",
-    name: "Emily Davis",
-    email: "emily.davis@example.com",
-    phone: "(555) 234-5678",
-    service: "Business Formation",
-    status: "new",
-    date: "July 16, 2023",
-    message: "I'm planning to start a new LLC and need guidance on the legal requirements and tax implications. Would appreciate your expert advice.",
-  },
-];
-
-const contactedLeads: Lead[] = [
-  {
-    id: "3",
-    name: "David Wilson",
-    email: "david.wilson@example.com",
-    phone: "(555) 345-6789",
-    service: "Estate Planning",
-    status: "contacted",
-    date: "July 10, 2023",
-    message: "I need to update my will and create a trust for my children. I'm looking for comprehensive estate planning services.",
-  },
-];
-
-const qualifiedLeads: Lead[] = [
-  {
-    id: "4",
-    name: "Sarah Johnson",
-    email: "sarah.johnson@example.com",
-    phone: "(555) 456-7890",
-    service: "Financial Planning",
-    status: "qualified",
-    date: "July 5, 2023",
-    message: "I'm looking for a complete financial review and retirement planning. I have a portfolio that needs evaluation and recommendations.",
-  },
-];
-
-const convertedLeads: Lead[] = [
-  {
-    id: "5",
-    name: "Robert Martinez",
-    email: "robert.martinez@example.com",
-    phone: "(555) 567-8901",
-    service: "Tax Preparation",
-    status: "converted",
-    date: "June 28, 2023",
-    message: "I need assistance with tax preparation for my business. I have complex requirements including multiple income streams and deductions.",
-  },
-];
 
 export default Leads;
