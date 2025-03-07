@@ -18,6 +18,10 @@ import FindExperts from "./pages/dashboard/client/FindExperts";
 import ClientAppointments from "./pages/dashboard/client/Appointments";
 import ClientMessages from "./pages/dashboard/client/Messages";
 import ClientDocuments from "./pages/dashboard/client/Documents";
+import ProviderLeads from "./pages/dashboard/provider/Leads";
+import ProviderAppointments from "./pages/dashboard/provider/Appointments";
+import ProviderMessages from "./pages/dashboard/provider/Messages";
+import ProviderDocuments from "./pages/dashboard/provider/Documents";
 
 const queryClient = new QueryClient();
 
@@ -46,10 +50,10 @@ const App = () => (
           
           {/* Provider dashboard routes */}
           <Route path="/dashboard/provider" element={<ProviderDashboard />} />
-          <Route path="/dashboard/provider/leads" element={<NotFound />} />
-          <Route path="/dashboard/provider/appointments" element={<NotFound />} />
-          <Route path="/dashboard/provider/messages" element={<NotFound />} />
-          <Route path="/dashboard/provider/documents" element={<NotFound />} />
+          <Route path="/dashboard/provider/leads" element={<ProviderLeads />} />
+          <Route path="/dashboard/provider/appointments" element={<ProviderAppointments />} />
+          <Route path="/dashboard/provider/messages" element={<ProviderMessages />} />
+          <Route path="/dashboard/provider/documents" element={<ProviderDocuments />} />
           
           {/* Service routes */}
           <Route path="/services/:serviceType" element={<ServicesPage />} />
