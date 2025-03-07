@@ -45,56 +45,68 @@ const Register = () => {
       });
 
       if (error) throw error;
-
+      
+      if (!data.user || !data.user.id) {
+        throw new Error("User creation failed - no user ID returned");
+      }
+      
+      console.log("User created successfully with ID:", data.user.id);
+      
       // Store the user type in localStorage
       localStorage.setItem("userType", userType);
 
       // We need to wait for the user to be properly created before inserting profile data
-      // Adding a small delay to ensure auth data is properly propagated
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Adding a longer delay to ensure auth data is properly propagated
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-      if (userType === "provider" && data.user) {
-        // Store additional provider data if registering as a provider
-        const { error: profileError } = await supabase
-          .from('provider_profiles')
-          .insert({
-            user_id: data.user.id,
-            name,
-            email,
-            category,
-            specialty,
-            years_experience: parseInt(experience) || 0,
-          });
+      try {
+        if (userType === "provider") {
+          console.log("Creating provider profile for user:", data.user.id);
+          // Store additional provider data if registering as a provider
+          const { error: profileError } = await supabase
+            .from('provider_profiles')
+            .insert({
+              user_id: data.user.id,
+              name,
+              email,
+              category,
+              specialty,
+              years_experience: parseInt(experience) || 0,
+            });
 
-        if (profileError) {
-          console.error("Provider profile error:", profileError);
-          toast.error("Could not create provider profile. Please try again.");
-          setLoading(false);
-          return;
+          if (profileError) {
+            console.error("Provider profile creation error:", profileError);
+            toast.error(`Provider profile creation failed: ${profileError.message}`);
+            setLoading(false);
+            return;
+          }
+        } else {
+          // Store basic client info
+          console.log("Creating client profile for user:", data.user.id);
+          const { error: clientError } = await supabase
+            .from('client_profiles')
+            .insert({
+              user_id: data.user.id,
+              name,
+              email,
+            });
+
+          if (clientError) {
+            console.error("Client profile error:", clientError);
+            toast.error(`Profile creation failed: ${clientError.message || "Unknown error"}`);
+            setLoading(false);
+            return;
+          }
         }
-      } else if (data.user) {
-        // Store basic client info
-        console.log("Creating client profile for user:", data.user.id);
-        const { error: clientError } = await supabase
-          .from('client_profiles')
-          .insert({
-            user_id: data.user.id,
-            name,
-            email,
-          });
-
-        if (clientError) {
-          console.error("Client profile error:", clientError);
-          toast.error(`Profile creation failed: ${clientError.message || "Unknown error"}`);
-          setLoading(false);
-          return;
-        }
+        
+        toast.success("Registration successful! Please check your email for verification.");
+        
+        // Redirect to login
+        navigate("/login");
+      } catch (profileError: any) {
+        console.error("Profile creation error:", profileError);
+        toast.error(`Profile creation failed: ${profileError.message || "Unknown error"}`);
       }
-      
-      toast.success("Registration successful! Please check your email for verification.");
-      
-      // Redirect to login
-      navigate("/login");
     } catch (error: any) {
       console.error("Registration error:", error);
       toast.error(error.message || "Registration failed. Please try again.");
