@@ -18,10 +18,15 @@ import FindExperts from "./pages/dashboard/client/FindExperts";
 import ClientAppointments from "./pages/dashboard/client/Appointments";
 import ClientMessages from "./pages/dashboard/client/Messages";
 import ClientDocuments from "./pages/dashboard/client/Documents";
+import ClientProfile from "./pages/dashboard/client/Profile";
+import ClientSettings from "./pages/dashboard/client/Settings";
+import ExpertProfile from "./pages/dashboard/client/ExpertProfile";
 import ProviderLeads from "./pages/dashboard/provider/Leads";
 import ProviderAppointments from "./pages/dashboard/provider/Appointments";
 import ProviderMessages from "./pages/dashboard/provider/Messages";
 import ProviderDocuments from "./pages/dashboard/provider/Documents";
+import ProviderProfile from "./pages/dashboard/provider/Profile";
+import ProviderSettings from "./pages/dashboard/provider/Settings";
 
 const queryClient = new QueryClient();
 
@@ -47,6 +52,9 @@ const App = () => (
           <Route path="/dashboard/appointments" element={<ClientAppointments />} />
           <Route path="/dashboard/messages" element={<ClientMessages />} />
           <Route path="/dashboard/documents" element={<ClientDocuments />} />
+          <Route path="/dashboard/profile" element={<ClientProfile />} />
+          <Route path="/dashboard/settings" element={<ClientSettings />} />
+          <Route path="/dashboard/expert/:expertId" element={<ExpertProfile />} />
           
           {/* Provider dashboard routes */}
           <Route path="/dashboard/provider" element={<ProviderDashboard />} />
@@ -54,6 +62,8 @@ const App = () => (
           <Route path="/dashboard/provider/appointments" element={<ProviderAppointments />} />
           <Route path="/dashboard/provider/messages" element={<ProviderMessages />} />
           <Route path="/dashboard/provider/documents" element={<ProviderDocuments />} />
+          <Route path="/dashboard/provider/profile" element={<ProviderProfile />} />
+          <Route path="/dashboard/provider/settings" element={<ProviderSettings />} />
           
           {/* Service routes */}
           <Route path="/services/:serviceType" element={<ServicesPage />} />

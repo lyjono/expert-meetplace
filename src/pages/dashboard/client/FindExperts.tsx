@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -133,28 +134,36 @@ const FindExperts = () => {
 };
 
 // Expert card component
-const ExpertCard = ({ expert }: { expert: Expert }) => (
-  <Card className="overflow-hidden">
-    <div className="p-6">
-      <div className="flex items-center gap-4">
-        <Avatar className="h-12 w-12">
-          <AvatarImage src={expert.image} alt={expert.name} />
-          <AvatarFallback>{expert.name.charAt(0)}</AvatarFallback>
-        </Avatar>
-        <div>
-          <h3 className="font-medium">{expert.name}</h3>
-          <p className="text-sm text-muted-foreground">{expert.specialty}</p>
+const ExpertCard = ({ expert }: { expert: Expert }) => {
+  const navigate = useNavigate();
+
+  const handleViewProfile = () => {
+    navigate(`/dashboard/expert/${expert.id}`);
+  };
+
+  return (
+    <Card className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow" onClick={handleViewProfile}>
+      <div className="p-6">
+        <div className="flex items-center gap-4">
+          <Avatar className="h-12 w-12">
+            <AvatarImage src={expert.image} alt={expert.name} />
+            <AvatarFallback>{expert.name.charAt(0)}</AvatarFallback>
+          </Avatar>
+          <div>
+            <h3 className="font-medium">{expert.name}</h3>
+            <p className="text-sm text-muted-foreground">{expert.specialty}</p>
+          </div>
         </div>
-      </div>
-      <div className="mt-4 flex items-center justify-between">
-        <Badge variant="secondary">{expert.category}</Badge>
-        <div className="text-sm">
-          ★ {expert.rating} <span className="text-muted-foreground">(120+ reviews)</span>
+        <div className="mt-4 flex items-center justify-between">
+          <Badge variant="secondary">{expert.category}</Badge>
+          <div className="text-sm">
+            ★ {expert.rating} <span className="text-muted-foreground">(120+ reviews)</span>
+          </div>
         </div>
+        <Button className="w-full mt-4">View Profile</Button>
       </div>
-      <Button className="w-full mt-4">View Profile</Button>
-    </div>
-  </Card>
-);
+    </Card>
+  );
+};
 
 export default FindExperts;
