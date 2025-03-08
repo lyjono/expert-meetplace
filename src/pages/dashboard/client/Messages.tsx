@@ -10,6 +10,7 @@ import { Search, Send, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { getConversation, sendMessage, subscribeToMessages, Message } from "@/services/realTimeMessages";
 import { getCurrentUser } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 
 interface Contact {
   id: string;
@@ -29,6 +30,7 @@ const Messages = () => {
   const [messageText, setMessageText] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isLoadingContacts, setIsLoadingContacts] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Check if we were directed here with a contactId
@@ -54,26 +56,75 @@ const Messages = () => {
 
   // Load contacts
   useEffect(() => {
-    // This would fetch actual contacts from the backend
-    // For now, we're using sample data
-    setContacts([
-      {
-        id: "1",
-        name: "Sarah Williams",
-        lastMessage: "I'll send you the documents tomorrow.",
-        lastMessageTime: "10:45 AM",
-        unread: 2,
-        status: "Financial Planning Client",
-      },
-      {
-        id: "2",
-        name: "Alex Johnson",
-        lastMessage: "Thank you for the tax advice.",
-        lastMessageTime: "Yesterday",
-        unread: 0,
-        status: "Tax Consultation Client",
-      },
-    ]);
+    const fetchContacts = async () => {
+      setIsLoadingContacts(true);
+      try {
+        const user = await getCurrentUser();
+        if (!user) return;
+
+        // Get all conversations the client is part of
+        const { data: messagesData, error: messagesError } = await supabase
+          .from('messages')
+          .select('*')
+          .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+          .order('created_at', { ascending: false });
+
+        if (messagesError) throw messagesError;
+
+        // Extract unique user IDs from conversations
+        const contactIds = new Set<string>();
+        messagesData.forEach(msg => {
+          if (msg.sender_id !== user.id) contactIds.add(msg.sender_id);
+          if (msg.receiver_id !== user.id) contactIds.add(msg.receiver_id);
+        });
+
+        // Get user profiles for all contacts
+        const contactsData: Contact[] = [];
+        for (const contactId of contactIds) {
+          // Check if user exists in users_view table
+          const { data: userData, error: userError } = await supabase
+            .from('users_view')
+            .select('*')
+            .eq('user_id', contactId)
+            .single();
+
+          if (userError || !userData) continue;
+
+          // Get the latest message with this contact
+          const latestMessage = messagesData.find(msg => 
+            (msg.sender_id === contactId && msg.receiver_id === user.id) || 
+            (msg.sender_id === user.id && msg.receiver_id === contactId)
+          );
+
+          if (!latestMessage) continue;
+
+          // Count unread messages
+          const unreadCount = messagesData.filter(msg => 
+            msg.sender_id === contactId && 
+            msg.receiver_id === user.id && 
+            !msg.read
+          ).length;
+
+          contactsData.push({
+            id: contactId,
+            name: userData.name || 'Unknown User',
+            lastMessage: latestMessage.content,
+            lastMessageTime: formatMessageTime(latestMessage.created_at),
+            unread: unreadCount,
+            status: userData.user_type === 'provider' ? 'Provider' : 'Client'
+          });
+        }
+
+        setContacts(contactsData);
+        setIsLoadingContacts(false);
+      } catch (error) {
+        console.error("Error fetching contacts:", error);
+        setIsLoadingContacts(false);
+        toast.error("Failed to load contacts");
+      }
+    };
+    
+    fetchContacts();
   }, []);
 
   // Load messages when a contact is selected
@@ -115,12 +166,28 @@ const Messages = () => {
                 ...contact,
                 lastMessage: newMessage.content,
                 lastMessageTime: "Just now",
-                unread: contact.id === newMessage.sender_id ? contact.unread + 1 : contact.unread
+                unread: newMessage.sender_id === contact.id ? contact.unread + 1 : contact.unread
               };
             }
             return contact;
           })
         );
+
+        // If it's a new contact, add them to the list
+        if (!contacts.some(c => c.id === newMessage.sender_id) && newMessage.receiver_id === currentUserId) {
+          // We should fetch the user info, but for simplicity just add with minimal info
+          setContacts(prev => [
+            ...prev,
+            {
+              id: newMessage.sender_id,
+              name: newMessage.sender_name || 'New Contact',
+              lastMessage: newMessage.content,
+              lastMessageTime: "Just now",
+              unread: 1,
+              status: 'New Contact'
+            }
+          ]);
+        }
       },
       (error) => {
         console.error("Subscription error:", error);
@@ -129,7 +196,7 @@ const Messages = () => {
     );
     
     return unsubscribe;
-  }, [currentUserId, selectedContactId]);
+  }, [currentUserId, selectedContactId, contacts]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -193,43 +260,49 @@ const Messages = () => {
               />
             </div>
             <div className="space-y-1 mt-3">
-              {contacts.map((contact) => (
-                <div
-                  key={contact.id}
-                  className={`flex items-center gap-3 p-2 rounded-md cursor-pointer ${
-                    selectedContactId === contact.id
-                      ? "bg-accent"
-                      : "hover:bg-muted"
-                  }`}
-                  onClick={() => handleContactSelect(contact.id)}
-                >
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage
-                      src={contact.avatar || "/placeholder.svg"}
-                      alt={contact.name}
-                    />
-                    <AvatarFallback>{contact.name.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 overflow-hidden">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-sm">
-                        {contact.name}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {contact.lastMessageTime}
-                      </span>
+              {isLoadingContacts ? (
+                <div className="text-center py-4">Loading contacts...</div>
+              ) : contacts.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">No conversations yet</div>
+              ) : (
+                contacts.map((contact) => (
+                  <div
+                    key={contact.id}
+                    className={`flex items-center gap-3 p-2 rounded-md cursor-pointer ${
+                      selectedContactId === contact.id
+                        ? "bg-accent"
+                        : "hover:bg-muted"
+                    }`}
+                    onClick={() => handleContactSelect(contact.id)}
+                  >
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage
+                        src={contact.avatar || "/placeholder.svg"}
+                        alt={contact.name}
+                      />
+                      <AvatarFallback>{contact.name.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 overflow-hidden">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-sm">
+                          {contact.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {contact.lastMessageTime}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {contact.lastMessage}
+                      </p>
                     </div>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {contact.lastMessage}
-                    </p>
+                    {contact.unread > 0 && (
+                      <div className="bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                        {contact.unread}
+                      </div>
+                    )}
                   </div>
-                  {contact.unread > 0 && (
-                    <div className="bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                      {contact.unread}
-                    </div>
-                  )}
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
@@ -244,7 +317,7 @@ const Messages = () => {
                     alt={contacts.find(c => c.id === selectedContactId)?.name || "Contact"}
                   />
                   <AvatarFallback>
-                    {contacts.find(c => c.id === selectedContactId)?.name.charAt(0) || "?"}
+                    {contacts.find(c => c.id === selectedContactId)?.name?.charAt(0) || "?"}
                   </AvatarFallback>
                 </Avatar>
                 <div>

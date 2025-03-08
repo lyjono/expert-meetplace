@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 
 // Get environment variables
@@ -39,14 +38,30 @@ export const getUserProfile = async () => {
     const user = await getCurrentUser();
     if (!user) return null;
     
-    const { data, error } = await supabase
-      .from('profiles')
+    // Try to get client profile first
+    let { data: clientProfile, error: clientError } = await supabase
+      .from('client_profiles')
       .select('*')
       .eq('user_id', user.id)
       .single();
       
-    if (error) throw error;
-    return data;
+    if (!clientError && clientProfile) {
+      return { ...clientProfile, type: 'client' };
+    }
+    
+    // If not a client, try provider profile
+    let { data: providerProfile, error: providerError } = await supabase
+      .from('provider_profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+      
+    if (!providerError && providerProfile) {
+      return { ...providerProfile, type: 'provider' };
+    }
+    
+    // If neither found, return error
+    throw new Error('No profile found');
   } catch (error) {
     console.error('Error getting user profile:', error);
     return null;

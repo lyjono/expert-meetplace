@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,22 +8,190 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { getUserProfile, supabase } from "@/lib/supabase";
+
+interface ClientSettings {
+  id: string;
+  user_id: string;
+  email_notifications: boolean;
+  sms_notifications: boolean;
+  marketing_emails: boolean;
+  profile_visibility: boolean;
+  activity_tracking: boolean;
+  two_factor_auth: boolean;
+  timezone: string;
+}
+
+const defaultSettings: ClientSettings = {
+  id: '',
+  user_id: '',
+  email_notifications: true,
+  sms_notifications: true,
+  marketing_emails: false,
+  profile_visibility: true,
+  activity_tracking: true,
+  two_factor_auth: false,
+  timezone: 'America/New_York'
+};
 
 const ClientSettings = () => {
-  const handleSaveGeneral = (e: React.FormEvent) => {
+  const [settings, setSettings] = useState<ClientSettings>(defaultSettings);
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      setIsLoading(true);
+      try {
+        const profile = await getUserProfile();
+        if (!profile) {
+          toast.error("Could not load user profile");
+          return;
+        }
+
+        // Get client settings
+        const { data: settingsData, error: settingsError } = await supabase
+          .from('client_settings')
+          .select('*')
+          .eq('user_id', profile.user_id)
+          .single();
+
+        if (settingsError && settingsError.code !== 'PGRST116') {
+          // PGRST116 is "no rows returned" error
+          console.error("Error fetching settings:", settingsError);
+          toast.error("Failed to load settings");
+          return;
+        }
+
+        if (settingsData) {
+          setSettings(settingsData);
+        } else {
+          // Create default settings if none exist
+          const { data: newSettings, error: createError } = await supabase
+            .from('client_settings')
+            .insert({
+              user_id: profile.user_id,
+              ...defaultSettings
+            })
+            .select('*')
+            .single();
+
+          if (createError) {
+            console.error("Error creating settings:", createError);
+            toast.error("Failed to create settings");
+            return;
+          }
+
+          if (newSettings) {
+            setSettings(newSettings);
+          }
+        }
+        
+        // Set email and phone from profile
+        setEmail(profile.email || '');
+        setPhone(profile.phone || '');
+      } catch (error) {
+        console.error("Error in settings initialization:", error);
+        toast.error("Failed to initialize settings");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSettings();
+  }, []);
+
+  const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success("General settings saved successfully");
+    try {
+      // Update client profile
+      const { error: profileError } = await supabase
+        .from('client_profiles')
+        .update({
+          email: email,
+          phone: phone
+        })
+        .eq('user_id', settings.user_id);
+
+      if (profileError) throw profileError;
+
+      // Update settings
+      const { error: settingsError } = await supabase
+        .from('client_settings')
+        .update({
+          timezone: settings.timezone
+        })
+        .eq('id', settings.id);
+
+      if (settingsError) throw settingsError;
+
+      toast.success("General settings saved successfully");
+    } catch (error) {
+      console.error("Error saving general settings:", error);
+      toast.error("Failed to save settings");
+    }
   };
 
-  const handleSaveNotifications = (e: React.FormEvent) => {
+  const handleSaveNotifications = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success("Notification preferences saved successfully");
+    try {
+      const { error } = await supabase
+        .from('client_settings')
+        .update({
+          email_notifications: settings.email_notifications,
+          sms_notifications: settings.sms_notifications,
+          marketing_emails: settings.marketing_emails
+        })
+        .eq('id', settings.id);
+
+      if (error) throw error;
+      
+      toast.success("Notification preferences saved successfully");
+    } catch (error) {
+      console.error("Error saving notification settings:", error);
+      toast.error("Failed to save notification preferences");
+    }
   };
 
-  const handleSavePrivacy = (e: React.FormEvent) => {
+  const handleSavePrivacy = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success("Privacy settings saved successfully");
+    try {
+      const { error } = await supabase
+        .from('client_settings')
+        .update({
+          profile_visibility: settings.profile_visibility,
+          activity_tracking: settings.activity_tracking,
+          two_factor_auth: settings.two_factor_auth
+        })
+        .eq('id', settings.id);
+
+      if (error) throw error;
+      
+      toast.success("Privacy settings saved successfully");
+    } catch (error) {
+      console.error("Error saving privacy settings:", error);
+      toast.error("Failed to save privacy settings");
+    }
   };
+
+  const handleSettingToggle = (setting: keyof ClientSettings) => {
+    setSettings(prev => ({
+      ...prev,
+      [setting]: !prev[setting]
+    }));
+  };
+
+  if (isLoading) {
+    return (
+      <DashboardLayout userType="user">
+        <div className="grid gap-4">
+          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+          <p className="text-muted-foreground">Loading settings...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout userType="user">
@@ -54,18 +222,29 @@ const ClientSettings = () => {
                 <form onSubmit={handleSaveGeneral} className="space-y-4">
                   <div className="grid gap-2">
                     <Label htmlFor="email">Email Address</Label>
-                    <Input id="email" type="email" defaultValue="alex.johnson@example.com" />
+                    <Input 
+                      id="email" 
+                      type="email" 
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="phone">Phone Number</Label>
-                    <Input id="phone" type="tel" defaultValue="(555) 123-4567" />
+                    <Input 
+                      id="phone" 
+                      type="tel" 
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="timezone">Timezone</Label>
                     <select
                       id="timezone"
                       className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      defaultValue="America/New_York"
+                      value={settings.timezone}
+                      onChange={(e) => setSettings({...settings, timezone: e.target.value})}
                     >
                       <option value="America/New_York">Eastern Time (US & Canada)</option>
                       <option value="America/Chicago">Central Time (US & Canada)</option>
@@ -96,7 +275,10 @@ const ClientSettings = () => {
                         Receive email updates about your appointments
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch 
+                      checked={settings.email_notifications}
+                      onCheckedChange={() => handleSettingToggle('email_notifications')}
+                    />
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
@@ -105,7 +287,10 @@ const ClientSettings = () => {
                         Get text message reminders for upcoming appointments
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch 
+                      checked={settings.sms_notifications}
+                      onCheckedChange={() => handleSettingToggle('sms_notifications')}
+                    />
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
@@ -114,7 +299,10 @@ const ClientSettings = () => {
                         Receive promotional emails and special offers
                       </p>
                     </div>
-                    <Switch />
+                    <Switch 
+                      checked={settings.marketing_emails}
+                      onCheckedChange={() => handleSettingToggle('marketing_emails')}
+                    />
                   </div>
                   <Button type="submit">Save Preferences</Button>
                 </form>
@@ -139,7 +327,10 @@ const ClientSettings = () => {
                         Allow experts to view your profile information
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch 
+                      checked={settings.profile_visibility}
+                      onCheckedChange={() => handleSettingToggle('profile_visibility')}
+                    />
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
@@ -148,7 +339,10 @@ const ClientSettings = () => {
                         Allow us to collect usage data to improve the service
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch 
+                      checked={settings.activity_tracking}
+                      onCheckedChange={() => handleSettingToggle('activity_tracking')}
+                    />
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
@@ -157,7 +351,10 @@ const ClientSettings = () => {
                         Add an extra layer of security to your account
                       </p>
                     </div>
-                    <Switch />
+                    <Switch 
+                      checked={settings.two_factor_auth}
+                      onCheckedChange={() => handleSettingToggle('two_factor_auth')}
+                    />
                   </div>
                   <Button type="submit">Save Settings</Button>
                 </form>
