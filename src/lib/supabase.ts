@@ -6,7 +6,21 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://iquwxwsmkhsneq
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxdXd4d3Nta2hzbmVxc2RhdXJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDEyOTc2MjcsImV4cCI6MjA1Njg3MzYyN30.oxh6d4xZv0sqmJYnqRzdPRM-BW3FHd0nMxxahk8yK70';
 
 // Create the Supabase client
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  realtime: {
+    params: {
+      eventsPerSecond: 10
+    }
+  }
+});
+
+// Enable real-time for messages table
+supabase.channel('schema-db-changes')
+  .on('postgres_changes', 
+    { event: '*', schema: 'public', table: 'messages' },
+    (payload) => console.log('Real-time update:', payload)
+  )
+  .subscribe();
 
 // Helper functions
 export const getCurrentUser = async () => {

@@ -1,5 +1,6 @@
+
 import { supabase } from '@/lib/supabase';
-import { getCurrentUser, getUserProfile } from '@/lib/supabase';
+import { getCurrentUser } from '@/lib/supabase';
 
 export interface Appointment {
   id: string;
@@ -151,11 +152,20 @@ export const createAppointment = async (
       .eq('user_id', user.id)
       .single();
       
-    if (profileError) throw profileError;
-    if (!clientProfile) throw new Error('Client profile not found');
+    if (profileError) {
+      console.error('Error getting client profile:', profileError);
+      throw profileError;
+    }
+    
+    if (!clientProfile) {
+      console.error('Client profile not found');
+      throw new Error('Client profile not found');
+    }
 
+    console.log('Creating appointment with client_id:', clientProfile.id);
+    
     // Create appointment
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('appointments')
       .insert({
         client_id: clientProfile.id,
@@ -165,9 +175,15 @@ export const createAppointment = async (
         time,
         status: 'pending',
         method
-      });
+      })
+      .select();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase error creating appointment:', error);
+      throw error;
+    }
+    
+    console.log('Appointment created successfully:', data);
     return true;
   } catch (error) {
     console.error('Error creating appointment:', error);

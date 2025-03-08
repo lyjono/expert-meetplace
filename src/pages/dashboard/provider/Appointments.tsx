@@ -1,13 +1,71 @@
 
-import React from "react";
+import React, { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar as CalendarIcon, Clock, Video, MessageSquare } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { getProviderAppointments, Appointment, cancelAppointment } from "@/services/appointments";
+import AvailabilityManager from "@/components/provider/AvailabilityManager";
+import { toast } from "sonner";
 
 const Appointments = () => {
+  const [providerId, setProviderId] = useState<string | null>(null);
+  
+  useEffect(() => {
+    const fetchProviderId = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        
+        const { data, error } = await supabase
+          .from('provider_profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+          
+        if (error) throw error;
+        setProviderId(data?.id || null);
+      } catch (error) {
+        console.error('Error fetching provider ID:', error);
+      }
+    };
+    
+    fetchProviderId();
+  }, []);
+  
+  const { data: upcomingAppointments = [], isLoading: isLoadingUpcoming } = useQuery({
+    queryKey: ['providerAppointments', 'upcoming'],
+    queryFn: () => getProviderAppointments('pending,confirmed'),
+    enabled: true,
+  });
+  
+  const { data: pastAppointments = [], isLoading: isLoadingPast } = useQuery({
+    queryKey: ['providerAppointments', 'past'],
+    queryFn: () => getProviderAppointments('completed'),
+    enabled: true,
+  });
+  
+  const { data: canceledAppointments = [], isLoading: isLoadingCanceled } = useQuery({
+    queryKey: ['providerAppointments', 'canceled'],
+    queryFn: () => getProviderAppointments('canceled'),
+    enabled: true,
+  });
+
+  const handleCancelAppointment = async (id: string) => {
+    const result = await cancelAppointment(id);
+    if (result) {
+      toast.success("Appointment canceled successfully");
+      // Force refetch
+      window.location.reload();
+    } else {
+      toast.error("Failed to cancel appointment");
+    }
+  };
+
   return (
     <DashboardLayout userType="provider">
       <div className="grid gap-4">
@@ -17,6 +75,12 @@ const Appointments = () => {
         </p>
       </div>
 
+      {providerId && (
+        <div className="mt-6 mb-8">
+          <AvailabilityManager providerId={providerId} />
+        </div>
+      )}
+
       <Tabs defaultValue="upcoming" className="mt-6">
         <TabsList>
           <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
@@ -25,23 +89,45 @@ const Appointments = () => {
         </TabsList>
         <TabsContent value="upcoming" className="mt-4">
           <div className="grid gap-4">
-            {upcomingAppointments.map((appointment) => (
-              <AppointmentCard key={appointment.id} appointment={appointment} />
-            ))}
+            {isLoadingUpcoming ? (
+              <p>Loading appointments...</p>
+            ) : upcomingAppointments.length === 0 ? (
+              <p>No upcoming appointments found.</p>
+            ) : (
+              upcomingAppointments.map((appointment) => (
+                <AppointmentCard 
+                  key={appointment.id} 
+                  appointment={appointment} 
+                  onCancel={() => handleCancelAppointment(appointment.id)}
+                />
+              ))
+            )}
           </div>
         </TabsContent>
         <TabsContent value="past" className="mt-4">
           <div className="grid gap-4">
-            {pastAppointments.map((appointment) => (
-              <AppointmentCard key={appointment.id} appointment={appointment} />
-            ))}
+            {isLoadingPast ? (
+              <p>Loading appointments...</p>
+            ) : pastAppointments.length === 0 ? (
+              <p>No past appointments found.</p>
+            ) : (
+              pastAppointments.map((appointment) => (
+                <AppointmentCard key={appointment.id} appointment={appointment} />
+              ))
+            )}
           </div>
         </TabsContent>
         <TabsContent value="canceled" className="mt-4">
           <div className="grid gap-4">
-            {canceledAppointments.map((appointment) => (
-              <AppointmentCard key={appointment.id} appointment={appointment} />
-            ))}
+            {isLoadingCanceled ? (
+              <p>Loading appointments...</p>
+            ) : canceledAppointments.length === 0 ? (
+              <p>No canceled appointments found.</p>
+            ) : (
+              canceledAppointments.map((appointment) => (
+                <AppointmentCard key={appointment.id} appointment={appointment} />
+              ))
+            )}
           </div>
         </TabsContent>
       </Tabs>
@@ -49,39 +135,30 @@ const Appointments = () => {
   );
 };
 
-interface Appointment {
-  id: string;
-  clientName: string;
-  service: string;
-  date: string;
-  time: string;
-  duration: string;
-  status: "upcoming" | "past" | "canceled";
-  type: "video" | "in-person" | "phone";
-  notes?: string;
-}
-
 interface AppointmentCardProps {
   appointment: Appointment;
+  onCancel?: () => void;
 }
 
-const AppointmentCard = ({ appointment }: AppointmentCardProps) => {
+const AppointmentCard = ({ appointment, onCancel }: AppointmentCardProps) => {
+  const getStatusVariant = (status: string) => {
+    switch(status) {
+      case 'confirmed': return 'default';
+      case 'pending': return 'secondary';
+      case 'completed': return 'outline';
+      case 'canceled': return 'destructive';
+      default: return 'default';
+    }
+  };
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between pb-2">
         <div>
-          <CardTitle className="text-base">{appointment.clientName}</CardTitle>
+          <CardTitle className="text-base">{appointment.client}</CardTitle>
           <CardDescription>{appointment.service}</CardDescription>
         </div>
-        <Badge
-          variant={
-            appointment.status === "upcoming"
-              ? "default"
-              : appointment.status === "past"
-              ? "secondary"
-              : "destructive"
-          }
-        >
+        <Badge variant={getStatusVariant(appointment.status)}>
           {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
         </Badge>
       </CardHeader>
@@ -93,36 +170,25 @@ const AppointmentCard = ({ appointment }: AppointmentCardProps) => {
           </div>
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-muted-foreground" />
-            <span>
-              {appointment.time} ({appointment.duration})
-            </span>
+            <span>{appointment.time} (60 minutes)</span>
           </div>
           <div className="flex items-center gap-2">
-            {appointment.type === "video" ? (
+            {appointment.method === "video" ? (
               <Video className="h-4 w-4 text-muted-foreground" />
-            ) : appointment.type === "in-person" ? (
-              <span className="h-4 w-4 flex items-center justify-center text-muted-foreground">📍</span>
             ) : (
-              <span className="h-4 w-4 flex items-center justify-center text-muted-foreground">📞</span>
+              <span className="h-4 w-4 flex items-center justify-center text-muted-foreground">📍</span>
             )}
             <span>
-              {appointment.type.charAt(0).toUpperCase() +
-                appointment.type.slice(1)}{" "}
+              {appointment.method.charAt(0).toUpperCase() +
+                appointment.method.slice(1)}{" "}
               Meeting
             </span>
           </div>
         </div>
-        {appointment.notes && (
-          <div className="text-sm text-muted-foreground mb-4">
-            <p>
-              <strong>Notes:</strong> {appointment.notes}
-            </p>
-          </div>
-        )}
         <div className="flex flex-wrap gap-2">
-          {appointment.status === "upcoming" && (
+          {(appointment.status === "confirmed" || appointment.status === "pending") && (
             <>
-              {appointment.type === "video" && (
+              {appointment.method === "video" && (
                 <Button size="sm">
                   <Video className="mr-2 h-4 w-4" />
                   Join Meeting
@@ -132,12 +198,14 @@ const AppointmentCard = ({ appointment }: AppointmentCardProps) => {
                 <MessageSquare className="mr-2 h-4 w-4" />
                 Message Client
               </Button>
-              <Button size="sm" variant="destructive">
-                Cancel
-              </Button>
+              {onCancel && (
+                <Button size="sm" variant="destructive" onClick={onCancel}>
+                  Cancel
+                </Button>
+              )}
             </>
           )}
-          {appointment.status === "past" && (
+          {appointment.status === "completed" && (
             <Button size="sm">Send Follow-up</Button>
           )}
         </div>
@@ -145,68 +213,5 @@ const AppointmentCard = ({ appointment }: AppointmentCardProps) => {
     </Card>
   );
 };
-
-// Sample data
-const upcomingAppointments: Appointment[] = [
-  {
-    id: "1",
-    clientName: "Sarah Williams",
-    service: "Financial Planning",
-    date: "July 21, 2023",
-    time: "10:30 AM",
-    duration: "60 minutes",
-    status: "upcoming",
-    type: "video",
-    notes: "Initial consultation to discuss retirement planning options.",
-  },
-  {
-    id: "2",
-    clientName: "Alex Johnson",
-    service: "Tax Consultation",
-    date: "July 22, 2023",
-    time: "2:00 PM",
-    duration: "45 minutes",
-    status: "upcoming",
-    type: "in-person",
-    notes: "Client needs to bring last year's tax returns and current financial statements.",
-  },
-];
-
-const pastAppointments: Appointment[] = [
-  {
-    id: "3",
-    clientName: "Michael Brown",
-    service: "Estate Planning",
-    date: "July 15, 2023",
-    time: "1:00 PM",
-    duration: "90 minutes",
-    status: "past",
-    type: "in-person",
-  },
-  {
-    id: "4",
-    clientName: "Emily Davis",
-    service: "Business Formation",
-    date: "July 10, 2023",
-    time: "11:00 AM",
-    duration: "60 minutes",
-    status: "past",
-    type: "video",
-  },
-];
-
-const canceledAppointments: Appointment[] = [
-  {
-    id: "5",
-    clientName: "David Wilson",
-    service: "Tax Planning",
-    date: "July 18, 2023",
-    time: "3:30 PM",
-    duration: "45 minutes",
-    status: "canceled",
-    type: "phone",
-    notes: "Client requested to reschedule due to personal emergency.",
-  },
-];
 
 export default Appointments;

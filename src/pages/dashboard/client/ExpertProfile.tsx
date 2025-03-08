@@ -1,9 +1,9 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar, MessageSquare, FileText, Calendar as CalendarIcon, Clock, Star } from "lucide-react";
 import { getExpertById } from "@/services/experts";
 import { createAppointment } from "@/services/appointments";
+import { getAvailableTimesForDate } from "@/services/availability";
+import { sendMessage, getProviderUserId } from "@/services/realTimeMessages";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -28,12 +30,35 @@ const ExpertProfile = () => {
     time: "",
     method: "video" as "video" | "in-person"
   });
+  const [availableTimes, setAvailableTimes] = useState<string[]>([]);
+  const [isLoadingTimes, setIsLoadingTimes] = useState(false);
   
   const { data: expert, isLoading, error } = useQuery({
     queryKey: ['expert', expertId],
     queryFn: () => expertId ? getExpertById(expertId) : null,
     enabled: !!expertId
   });
+
+  useEffect(() => {
+    if (appointmentDetails.date && expertId) {
+      setIsLoadingTimes(true);
+      getAvailableTimesForDate(expertId, appointmentDetails.date)
+        .then(times => {
+          setAvailableTimes(times);
+          setIsLoadingTimes(false);
+          
+          // Clear selected time if it's not in available times
+          if (appointmentDetails.time && !times.includes(appointmentDetails.time)) {
+            setAppointmentDetails(prev => ({ ...prev, time: "" }));
+          }
+        })
+        .catch(error => {
+          console.error("Error fetching available times:", error);
+          setIsLoadingTimes(false);
+          setAvailableTimes([]);
+        });
+    }
+  }, [appointmentDetails.date, expertId]);
 
   const handleSchedule = () => {
     setShowScheduleDialog(true);
@@ -66,51 +91,43 @@ const ExpertProfile = () => {
     if (!expertId) return;
     
     try {
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error("You need to be logged in to send messages");
+      // Get the provider's user ID from their profile ID
+      const providerUserId = await getProviderUserId(expertId);
+      
+      if (!providerUserId) {
+        toast.error("Could not find provider's user ID");
         return;
       }
       
-      // Get the profile IDs for both users
-      const { data: providerProfile } = await supabase
-        .from('provider_profiles')
-        .select('user_id')
-        .eq('id', expertId)
-        .single();
-        
-      if (!providerProfile) {
-        toast.error("Provider not found");
-        return;
-      }
+      // Send initial message
+      const result = await sendMessage(
+        providerUserId,
+        "Hello, I'd like to discuss your services."
+      );
       
-      // Create a new message to start the thread
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          sender_id: user.id,
-          receiver_id: providerProfile.user_id,
-          content: `Hello, I'd like to discuss your services.`
-        });
-        
-      if (error) {
-        console.error("Error creating message:", error);
-        toast.error("Failed to create message thread");
-        return;
+      if (result) {
+        toast.success("Message sent successfully");
+        navigate("/dashboard/messages");
+      } else {
+        toast.error("Failed to send message");
       }
-      
-      toast.success("Message thread created");
-      navigate("/dashboard/messages");
     } catch (err) {
       console.error("Error:", err);
-      toast.error("Failed to create message thread");
+      toast.error("Failed to send message");
     }
   };
 
   const handleShareFiles = () => {
     navigate("/dashboard/documents", { state: { expertId } });
     toast.success("Navigate to documents to share files");
+  };
+
+  const formatTime = (time: string) => {
+    const [hours, minutes] = time.split(':');
+    const hour = parseInt(hours, 10);
+    const period = hour >= 12 ? 'PM' : 'AM';
+    const formattedHour = hour % 12 || 12;
+    return `${formattedHour}:${minutes} ${period}`;
   };
 
   if (isLoading) return (
@@ -294,11 +311,27 @@ const ExpertProfile = () => {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="time">Time</Label>
-              <Input 
-                id="time" 
-                type="time"
-                onChange={(e) => setAppointmentDetails({...appointmentDetails, time: e.target.value})}
-              />
+              {isLoadingTimes ? (
+                <p className="text-sm text-muted-foreground">Loading available times...</p>
+              ) : availableTimes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No available times for selected date. Please choose another date.</p>
+              ) : (
+                <Select 
+                  value={appointmentDetails.time}
+                  onValueChange={(value) => setAppointmentDetails({...appointmentDetails, time: value})}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a time" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableTimes.map((time) => (
+                      <SelectItem key={time} value={time}>
+                        {formatTime(time)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="method">Method</Label>
@@ -318,7 +351,12 @@ const ExpertProfile = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowScheduleDialog(false)}>Cancel</Button>
-            <Button onClick={handleBookAppointment}>Book Appointment</Button>
+            <Button 
+              onClick={handleBookAppointment}
+              disabled={!appointmentDetails.service || !appointmentDetails.date || !appointmentDetails.time}
+            >
+              Book Appointment
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
