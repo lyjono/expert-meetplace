@@ -39,18 +39,25 @@ export const getConversation = async (otherUserId: string): Promise<Message[]> =
     const user = await getCurrentUser();
     if (!user) throw new Error('User not authenticated');
 
+    // Query messages where current user is either sender or receiver
+    // and the other user is either receiver or sender
     const { data, error } = await supabase
       .from('messages')
       .select('*')
       .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-      .and(`sender_id.eq.${otherUserId},receiver_id.eq.${user.id}`)
-      .or(`sender_id.eq.${user.id},receiver_id.eq.${otherUserId}`)
+      .or(`sender_id.eq.${otherUserId},receiver_id.eq.${otherUserId}`)
       .order('created_at', { ascending: true });
 
     if (error) throw error;
     
+    // Filter locally to get only messages between these two users
+    const filteredMessages = data.filter(msg => 
+      (msg.sender_id === user.id && msg.receiver_id === otherUserId) || 
+      (msg.sender_id === otherUserId && msg.receiver_id === user.id)
+    );
+    
     // Mark received messages as read
-    const messagesToUpdate = data
+    const messagesToUpdate = filteredMessages
       .filter(msg => msg.receiver_id === user.id && !msg.read)
       .map(msg => msg.id);
       
@@ -61,7 +68,7 @@ export const getConversation = async (otherUserId: string): Promise<Message[]> =
         .in('id', messagesToUpdate);
     }
 
-    return data || [];
+    return filteredMessages || [];
   } catch (error) {
     console.error('Error getting conversation:', error);
     return [];
