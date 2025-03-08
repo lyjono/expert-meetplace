@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
@@ -10,11 +10,24 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar, MessageSquare, FileText, Calendar as CalendarIcon, Clock, Star } from "lucide-react";
 import { getExpertById } from "@/services/experts";
+import { createAppointment } from "@/services/appointments";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const ExpertProfile = () => {
   const { expertId } = useParams<{ expertId: string }>();
   const navigate = useNavigate();
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [appointmentDetails, setAppointmentDetails] = useState({
+    service: "",
+    date: "",
+    time: "",
+    method: "video" as "video" | "in-person"
+  });
   
   const { data: expert, isLoading, error } = useQuery({
     queryKey: ['expert', expertId],
@@ -23,13 +36,81 @@ const ExpertProfile = () => {
   });
 
   const handleSchedule = () => {
-    toast.success("Appointment scheduling initiated");
-    navigate("/dashboard/appointments");
+    setShowScheduleDialog(true);
   };
 
-  const handleMessage = () => {
-    toast.success("Message thread created");
-    navigate("/dashboard/messages");
+  const handleBookAppointment = async () => {
+    if (!expertId || !appointmentDetails.service || !appointmentDetails.date || !appointmentDetails.time) {
+      toast.error("Please fill out all required fields");
+      return;
+    }
+
+    const result = await createAppointment(
+      expertId,
+      appointmentDetails.service,
+      appointmentDetails.date,
+      appointmentDetails.time,
+      appointmentDetails.method
+    );
+
+    if (result) {
+      toast.success("Appointment scheduled successfully");
+      setShowScheduleDialog(false);
+      navigate("/dashboard/appointments");
+    } else {
+      toast.error("Failed to schedule appointment");
+    }
+  };
+
+  const handleMessage = async () => {
+    if (!expertId) return;
+    
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("You need to be logged in to send messages");
+        return;
+      }
+      
+      // Get the profile IDs for both users
+      const { data: providerProfile } = await supabase
+        .from('provider_profiles')
+        .select('user_id')
+        .eq('id', expertId)
+        .single();
+        
+      if (!providerProfile) {
+        toast.error("Provider not found");
+        return;
+      }
+      
+      // Create a new message to start the thread
+      const { error } = await supabase
+        .from('messages')
+        .insert({
+          sender_id: user.id,
+          receiver_id: providerProfile.user_id,
+          content: `Hello, I'd like to discuss your services.`
+        });
+        
+      if (error) {
+        console.error("Error creating message:", error);
+        toast.error("Failed to create message thread");
+        return;
+      }
+      
+      toast.success("Message thread created");
+      navigate("/dashboard/messages");
+    } catch (err) {
+      console.error("Error:", err);
+      toast.error("Failed to create message thread");
+    }
+  };
+
+  const handleShareFiles = () => {
+    navigate("/dashboard/documents", { state: { expertId } });
+    toast.success("Navigate to documents to share files");
   };
 
   if (isLoading) return (
@@ -61,11 +142,9 @@ const ExpertProfile = () => {
                 </Avatar>
                 <div className="mt-4 text-center md:text-left">
                   <h1 className="text-2xl font-bold">{expert.name}</h1>
-                  <p className="text-lg text-muted-foreground">{expert.specialty}</p>
+                  <p className="text-lg text-muted-foreground">{expert.specialty || 'Specialist'}</p>
                   <div className="flex mt-2 gap-2 flex-wrap justify-center md:justify-start">
                     <Badge>{expert.category}</Badge>
-                    <Badge variant="outline">Financial Planning</Badge>
-                    <Badge variant="outline">Tax Advisory</Badge>
                   </div>
                   <div className="flex items-center mt-3">
                     <div className="flex">
@@ -73,7 +152,7 @@ const ExpertProfile = () => {
                         <Star key={i} className={`h-4 w-4 ${i < Math.floor(expert.rating) ? "text-yellow-500 fill-yellow-500" : "text-gray-300"}`} />
                       ))}
                     </div>
-                    <span className="ml-2 text-sm text-muted-foreground">({expert.rating}) · 120+ reviews</span>
+                    <span className="ml-2 text-sm text-muted-foreground">({expert.rating})</span>
                   </div>
                 </div>
               </div>
@@ -87,7 +166,7 @@ const ExpertProfile = () => {
                     <MessageSquare className="h-4 w-4" />
                     Message
                   </Button>
-                  <Button variant="outline" className="flex gap-2" onClick={() => navigate("/dashboard/documents")}>
+                  <Button variant="outline" className="flex gap-2" onClick={handleShareFiles}>
                     <FileText className="h-4 w-4" />
                     Share Files
                   </Button>
@@ -95,11 +174,11 @@ const ExpertProfile = () => {
                 <div className="bg-accent/50 p-4 rounded-lg w-full md:w-auto">
                   <div className="flex items-center gap-2 mb-2">
                     <CalendarIcon className="h-4 w-4 text-primary" />
-                    <span className="font-medium">Next Available: Tomorrow, 10:00 AM</span>
+                    <span className="font-medium">Available for booking</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Clock className="h-4 w-4 text-primary" />
-                    <span>Typically responds within 2 hours</span>
+                    <span>Typically responds within 24 hours</span>
                   </div>
                 </div>
               </div>
@@ -111,7 +190,6 @@ const ExpertProfile = () => {
           <TabsList className="mb-4">
             <TabsTrigger value="about">About</TabsTrigger>
             <TabsTrigger value="services">Services</TabsTrigger>
-            <TabsTrigger value="reviews">Reviews</TabsTrigger>
           </TabsList>
           
           <TabsContent value="about">
@@ -124,29 +202,15 @@ const ExpertProfile = () => {
                   <div>
                     <h3 className="text-lg font-medium mb-2">Bio</h3>
                     <p>
-                      {expert.name} is a highly experienced professional in {expert.category.toLowerCase()} services with over 15 years of industry experience. 
-                      Specializing in {expert.specialty}, they have helped hundreds of clients navigate complex financial and legal challenges.
+                      {expert.name} is a professional in {expert.category.toLowerCase()} services
+                      {expert.specialty ? ` specializing in ${expert.specialty}` : ''}.
+                      {expert.years_experience ? ` With ${expert.years_experience} years of experience.` : ''}
                     </p>
                   </div>
                   
                   <div>
                     <h3 className="text-lg font-medium mb-2">Experience</h3>
-                    <ul className="list-disc pl-5 space-y-2">
-                      <li>15+ years experience in {expert.category}</li>
-                      <li>Certified Professional Accountant (CPA)</li>
-                      <li>Former advisor at top-tier consulting firm</li>
-                      <li>Helped 500+ clients with tax optimization strategies</li>
-                    </ul>
-                  </div>
-                  
-                  <div>
-                    <h3 className="text-lg font-medium mb-2">Education & Certifications</h3>
-                    <ul className="list-disc pl-5 space-y-2">
-                      <li>MBA, Finance, Stanford University</li>
-                      <li>BS, Accounting, University of California</li>
-                      <li>Certified Financial Planner (CFP)</li>
-                      <li>Certified Tax Advisor (CTA)</li>
-                    </ul>
+                    <p>Professional in {expert.category}</p>
                   </div>
                 </div>
               </CardContent>
@@ -168,7 +232,7 @@ const ExpertProfile = () => {
                       <div>
                         <h3 className="font-medium text-lg">Initial Consultation</h3>
                         <p className="text-muted-foreground">60 minutes • Virtual or In-person</p>
-                        <p className="mt-2">Discuss your financial situation and goals to establish a personalized plan.</p>
+                        <p className="mt-2">Discuss your needs and goals to establish a personalized plan.</p>
                       </div>
                       <div className="text-right">
                         <p className="font-medium text-lg">$150</p>
@@ -180,9 +244,9 @@ const ExpertProfile = () => {
                   <div className="border rounded-lg p-4">
                     <div className="flex justify-between items-start">
                       <div>
-                        <h3 className="font-medium text-lg">Comprehensive Tax Planning</h3>
+                        <h3 className="font-medium text-lg">{expert.category} Service</h3>
                         <p className="text-muted-foreground">90 minutes • Virtual</p>
-                        <p className="mt-2">Strategic tax planning to optimize your financial position and minimize tax liability.</p>
+                        <p className="mt-2">Comprehensive service tailored to your specific needs.</p>
                       </div>
                       <div className="text-right">
                         <p className="font-medium text-lg">$250</p>
@@ -190,77 +254,74 @@ const ExpertProfile = () => {
                       </div>
                     </div>
                   </div>
-                  
-                  <div className="border rounded-lg p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-medium text-lg">Financial Review</h3>
-                        <p className="text-muted-foreground">45 minutes • Virtual</p>
-                        <p className="mt-2">Review your current financial status and provide recommendations for improvement.</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium text-lg">$125</p>
-                        <Button className="mt-2" onClick={handleSchedule}>Book Now</Button>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </CardContent>
-            </Card>
-          </TabsContent>
-          
-          <TabsContent value="reviews">
-            <Card>
-              <CardHeader>
-                <CardTitle>Client Reviews</CardTitle>
-                <CardDescription>
-                  Feedback from previous clients
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {[
-                    {
-                      name: "Michael Thompson",
-                      rating: 5,
-                      date: "2 weeks ago",
-                      comment: "Extremely helpful and knowledgeable. Helped me save significantly on my taxes this year with strategic planning."
-                    },
-                    {
-                      name: "Sarah Johnson",
-                      rating: 5,
-                      date: "1 month ago",
-                      comment: "Outstanding service. Very responsive and provided excellent guidance for my small business finances."
-                    },
-                    {
-                      name: "David Wilson",
-                      rating: 4,
-                      date: "2 months ago",
-                      comment: "Solid advice and professional service. Would recommend for anyone looking for tax planning assistance."
-                    }
-                  ].map((review, i) => (
-                    <div key={i} className="border-b pb-4 last:border-0">
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="font-medium">{review.name}</div>
-                        <div className="text-sm text-muted-foreground">{review.date}</div>
-                      </div>
-                      <div className="flex mb-2">
-                        {[...Array(5)].map((_, i) => (
-                          <Star key={i} className={`h-4 w-4 ${i < review.rating ? "text-yellow-500 fill-yellow-500" : "text-gray-300"}`} />
-                        ))}
-                      </div>
-                      <p>{review.comment}</p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button variant="outline" className="w-full">View All Reviews</Button>
-              </CardFooter>
             </Card>
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Schedule an Appointment</DialogTitle>
+            <DialogDescription>
+              Fill out the details below to schedule an appointment with {expert.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="service">Service</Label>
+              <Select 
+                onValueChange={(value) => setAppointmentDetails({...appointmentDetails, service: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a service" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Initial Consultation">Initial Consultation</SelectItem>
+                  <SelectItem value={`${expert.category} Service`}>{expert.category} Service</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="date">Date</Label>
+              <Input 
+                id="date" 
+                type="date" 
+                onChange={(e) => setAppointmentDetails({...appointmentDetails, date: e.target.value})}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="time">Time</Label>
+              <Input 
+                id="time" 
+                type="time"
+                onChange={(e) => setAppointmentDetails({...appointmentDetails, time: e.target.value})}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="method">Method</Label>
+              <Select 
+                defaultValue="video"
+                onValueChange={(value) => setAppointmentDetails({...appointmentDetails, method: value as "video" | "in-person"})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a method" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="video">Video Call</SelectItem>
+                  <SelectItem value="in-person">In-Person</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowScheduleDialog(false)}>Cancel</Button>
+            <Button onClick={handleBookAppointment}>Book Appointment</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };
