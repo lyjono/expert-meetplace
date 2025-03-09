@@ -244,25 +244,37 @@ export type Database = {
       }
       messages: {
         Row: {
+          attachment_name: string | null
+          attachment_type: string | null
+          attachment_url: string | null
           content: string
           created_at: string | null
           id: string
+          is_video_call: boolean | null
           read: boolean | null
           receiver_id: string
           sender_id: string
         }
         Insert: {
+          attachment_name?: string | null
+          attachment_type?: string | null
+          attachment_url?: string | null
           content: string
           created_at?: string | null
           id?: string
+          is_video_call?: boolean | null
           read?: boolean | null
           receiver_id: string
           sender_id: string
         }
         Update: {
+          attachment_name?: string | null
+          attachment_type?: string | null
+          attachment_url?: string | null
           content?: string
           created_at?: string | null
           id?: string
+          is_video_call?: boolean | null
           read?: boolean | null
           receiver_id?: string
           sender_id?: string
