@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
@@ -38,7 +37,6 @@ const Messages = () => {
   const [isLoadingContacts, setIsLoadingContacts] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // Check if we were directed here with a contactId
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const contactId = params.get('contactId');
@@ -47,7 +45,6 @@ const Messages = () => {
     }
   }, [location]);
 
-  // Get current user
   useEffect(() => {
     const fetchCurrentUser = async () => {
       const user = await getCurrentUser();
@@ -59,7 +56,6 @@ const Messages = () => {
     fetchCurrentUser();
   }, []);
 
-  // Load contacts
   useEffect(() => {
     const fetchContacts = async () => {
       setIsLoadingContacts(true);
@@ -67,7 +63,6 @@ const Messages = () => {
         const user = await getCurrentUser();
         if (!user) return;
 
-        // Get all conversations the provider is part of
         const { data: messagesData, error: messagesError } = await supabase
           .from('messages')
           .select('*')
@@ -76,17 +71,14 @@ const Messages = () => {
 
         if (messagesError) throw messagesError;
 
-        // Extract unique user IDs from conversations
         const contactIds = new Set<string>();
         messagesData.forEach(msg => {
           if (msg.sender_id !== user.id) contactIds.add(msg.sender_id);
           if (msg.receiver_id !== user.id) contactIds.add(msg.receiver_id);
         });
 
-        // Get user profiles for all contacts
         const contactsData: Contact[] = [];
         for (const contactId of contactIds) {
-          // Check if user exists in profiles table
           const { data: userData, error: userError } = await supabase
             .from('users_view')
             .select('*')
@@ -95,7 +87,6 @@ const Messages = () => {
 
           if (userError || !userData) continue;
 
-          // Get the latest message with this contact
           const latestMessage = messagesData.find(msg => 
             (msg.sender_id === contactId && msg.receiver_id === user.id) || 
             (msg.sender_id === user.id && msg.receiver_id === contactId)
@@ -103,7 +94,6 @@ const Messages = () => {
 
           if (!latestMessage) continue;
 
-          // Count unread messages
           const unreadCount = messagesData.filter(msg => 
             msg.sender_id === contactId && 
             msg.receiver_id === user.id && 
@@ -132,11 +122,10 @@ const Messages = () => {
     fetchContacts();
   }, []);
 
-  // Load messages when a contact is selected
   useEffect(() => {
-    if (selectedContactId) {
+    if (selectedContactId && currentUserId) {
       setIsLoadingMessages(true);
-      getConversation(selectedContactId)
+      getConversation(currentUserId, selectedContactId)
         .then(result => {
           setMessages(result);
           setIsLoadingMessages(false);
@@ -147,15 +136,13 @@ const Messages = () => {
           toast.error("Failed to load messages");
         });
     }
-  }, [selectedContactId]);
+  }, [selectedContactId, currentUserId]);
 
-  // Subscribe to new messages
   useEffect(() => {
     if (!currentUserId) return;
     
     const unsubscribe = subscribeToMessages(
       (newMessage) => {
-        // Only update if the message is part of the current conversation
         if (
           selectedContactId && 
           (newMessage.sender_id === selectedContactId || newMessage.receiver_id === selectedContactId)
@@ -163,7 +150,6 @@ const Messages = () => {
           setMessages(prev => [...prev, newMessage]);
         }
         
-        // Update contacts with new message info
         setContacts(prev => 
           prev.map(contact => {
             if (contact.id === newMessage.sender_id || contact.id === newMessage.receiver_id) {
@@ -178,9 +164,7 @@ const Messages = () => {
           })
         );
 
-        // If it's a new contact, add them to the list
         if (!contacts.some(c => c.id === newMessage.sender_id) && newMessage.receiver_id === currentUserId) {
-          // We should fetch the user info, but for simplicity just add with minimal info
           setContacts(prev => [
             ...prev,
             {
@@ -203,7 +187,6 @@ const Messages = () => {
     return unsubscribe;
   }, [currentUserId, selectedContactId, contacts]);
 
-  // Scroll to bottom when messages change
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -212,7 +195,6 @@ const Messages = () => {
 
   const handleContactSelect = (contactId: string) => {
     setSelectedContactId(contactId);
-    // Reset unread count when selecting a contact
     setContacts(prev => 
       prev.map(contact => 
         contact.id === contactId 
@@ -223,10 +205,14 @@ const Messages = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!messageText.trim() || !selectedContactId) return;
+    if (!messageText.trim() || !selectedContactId || !currentUserId) return;
     
     try {
-      const success = await sendMessage(selectedContactId, messageText);
+      const success = await sendMessage(
+        currentUserId,
+        selectedContactId,
+        messageText
+      );
       
       if (success) {
         setMessageText("");
