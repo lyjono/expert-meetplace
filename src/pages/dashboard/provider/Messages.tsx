@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
@@ -16,6 +17,7 @@ import {
 } from "@/services/realTimeMessages";
 import { getCurrentUser } from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Contact {
   id: string;
@@ -275,51 +277,53 @@ const Messages = () => {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <div className="space-y-1 mt-3">
-              {isLoadingContacts ? (
-                <div className="text-center py-4">Loading contacts...</div>
-              ) : filteredContacts.length === 0 ? (
-                <div className="text-center py-4 text-muted-foreground">No conversations yet</div>
-              ) : (
-                filteredContacts.map((contact) => (
-                  <div
-                    key={contact.id}
-                    className={`flex items-center gap-3 p-2 rounded-md cursor-pointer ${
-                      selectedContactId === contact.id
-                        ? "bg-accent"
-                        : "hover:bg-muted"
-                    }`}
-                    onClick={() => handleContactSelect(contact.id)}
-                  >
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage
-                        src={contact.avatar || "/placeholder.svg"}
-                        alt={contact.name}
-                      />
-                      <AvatarFallback>{contact.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-sm">
-                          {contact.name}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {contact.lastMessageTime}
-                        </span>
+            <ScrollArea className="h-[600px]">
+              <div className="space-y-1 mt-3">
+                {isLoadingContacts ? (
+                  <div className="text-center py-4">Loading contacts...</div>
+                ) : filteredContacts.length === 0 ? (
+                  <div className="text-center py-4 text-muted-foreground">No conversations yet</div>
+                ) : (
+                  filteredContacts.map((contact) => (
+                    <div
+                      key={contact.id}
+                      className={`flex items-center gap-3 p-2 rounded-md cursor-pointer ${
+                        selectedContactId === contact.id
+                          ? "bg-accent"
+                          : "hover:bg-muted"
+                      }`}
+                      onClick={() => handleContactSelect(contact.id)}
+                    >
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage
+                          src={contact.avatar || "/placeholder.svg"}
+                          alt={contact.name}
+                        />
+                        <AvatarFallback>{contact.name.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 overflow-hidden">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm">
+                            {contact.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {contact.lastMessageTime}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {contact.lastMessage}
+                        </p>
                       </div>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {contact.lastMessage}
-                      </p>
+                      {contact.unread > 0 && (
+                        <div className="bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                          {contact.unread}
+                        </div>
+                      )}
                     </div>
-                    {contact.unread > 0 && (
-                      <div className="bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                        {contact.unread}
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
           </CardContent>
         </Card>
 
@@ -346,36 +350,38 @@ const Messages = () => {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {isLoadingMessages ? (
-                  <p className="text-center text-muted-foreground">Loading messages...</p>
-                ) : messages.length === 0 ? (
-                  <p className="text-center text-muted-foreground">No messages yet. Start the conversation!</p>
-                ) : (
-                  messages.map((message, i) => (
-                    <div
-                      key={message.id || i}
-                      className={`flex ${
-                        message.sender_id === currentUserId ? "justify-end" : "justify-start"
-                      }`}
-                    >
+              <ScrollArea className="flex-1 p-4">
+                <div className="space-y-4">
+                  {isLoadingMessages ? (
+                    <p className="text-center text-muted-foreground">Loading messages...</p>
+                  ) : messages.length === 0 ? (
+                    <p className="text-center text-muted-foreground">No messages yet. Start the conversation!</p>
+                  ) : (
+                    messages.map((message, i) => (
                       <div
-                        className={`max-w-[80%] rounded-lg p-3 ${
-                          message.sender_id === currentUserId
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted"
+                        key={message.id || i}
+                        className={`flex ${
+                          message.sender_id === currentUserId ? "justify-end" : "justify-start"
                         }`}
                       >
-                        <p className="text-sm">{message.content}</p>
-                        <span className="text-xs opacity-70 mt-1 block text-right">
-                          {formatMessageTime(message.created_at)}
-                        </span>
+                        <div
+                          className={`max-w-[80%] rounded-lg p-3 ${
+                            message.sender_id === currentUserId
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted"
+                          }`}
+                        >
+                          <p className="text-sm">{message.content}</p>
+                          <span className="text-xs opacity-70 mt-1 block text-right">
+                            {formatMessageTime(message.created_at)}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))
-                )}
-                <div ref={messagesEndRef} />
-              </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+              </ScrollArea>
 
               <div className="p-3 border-t">
                 <div className="flex items-center gap-2">

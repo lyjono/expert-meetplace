@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -396,7 +397,7 @@ const MessagesPage = () => {
                       </div>
                     </div>
                     
-                    <ScrollArea className="flex-1 p-4">
+                    <ScrollArea className="flex-1 p-4 h-full overflow-auto">
                       {messages.length === 0 ? (
                         <div className="flex justify-center items-center h-24">
                           <p className="text-muted-foreground">No messages yet. Send a message to start the conversation.</p>

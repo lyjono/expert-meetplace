@@ -105,25 +105,37 @@ export const subscribeToMessages = (
   errorCallback?: (error: any) => void
 ) => {
   try {
-    // Set up the channel subscription
+    // Enable realtime subscription for the messages table
     const channel = supabase
       .channel('messages-changes')
       .on('postgres_changes', 
-        { event: 'INSERT', schema: 'public', table: 'messages' },
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'messages' 
+        },
         (payload) => {
+          console.log('New message received in subscription:', payload);
           callback(payload.new as Message);
         }
       )
       .subscribe((status) => {
-        if (status !== 'SUBSCRIBED') {
-          errorCallback && errorCallback(new Error(`Failed to subscribe: ${status}`));
+        console.log('Subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to messages!');
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          console.error('Subscription closed or error:', status);
+          errorCallback && errorCallback(new Error(`Subscription status: ${status}`));
         }
       });
       
+    // Return unsubscribe function
     return () => {
+      console.log('Unsubscribing from messages channel');
       supabase.removeChannel(channel);
     };
   } catch (error) {
+    console.error('Error setting up subscription:', error);
     errorCallback && errorCallback(error);
     return () => {};
   }
