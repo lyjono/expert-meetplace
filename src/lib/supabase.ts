@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 
 // Get environment variables
@@ -88,5 +89,49 @@ export const getUserType = async (): Promise<string> => {
   } catch (error) {
     console.error('Error getting user type:', error);
     return 'client';
+  }
+};
+
+// Get client settings from database
+export const getClientSettings = async () => {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return null;
+    
+    // Try to get client settings
+    let { data: clientSettings, error } = await supabase
+      .from('client_settings')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+      
+    if (error) {
+      // If settings don't exist yet, create default settings
+      if (error.code === 'PGRST116') {
+        const { data: newSettings, error: insertError } = await supabase
+          .from('client_settings')
+          .insert({
+            user_id: user.id,
+            email_notifications: true,
+            sms_notifications: true,
+            marketing_emails: false,
+            profile_visibility: true,
+            activity_tracking: true,
+            two_factor_auth: false,
+            timezone: 'America/New_York'
+          })
+          .select()
+          .single();
+          
+        if (insertError) throw insertError;
+        return newSettings;
+      }
+      throw error;
+    }
+    
+    return clientSettings;
+  } catch (error) {
+    console.error('Error getting client settings:', error);
+    return null;
   }
 };

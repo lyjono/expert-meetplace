@@ -68,26 +68,89 @@ export type Database = {
       }
       client_profiles: {
         Row: {
+          address: string | null
+          avatar_url: string | null
+          bio: string | null
+          city: string | null
           created_at: string | null
           email: string
           id: string
           name: string
+          phone: string | null
+          state: string | null
           updated_at: string | null
           user_id: string
+          zip: string | null
         }
         Insert: {
+          address?: string | null
+          avatar_url?: string | null
+          bio?: string | null
+          city?: string | null
           created_at?: string | null
           email: string
           id?: string
           name: string
+          phone?: string | null
+          state?: string | null
           updated_at?: string | null
           user_id: string
+          zip?: string | null
         }
         Update: {
+          address?: string | null
+          avatar_url?: string | null
+          bio?: string | null
+          city?: string | null
           created_at?: string | null
           email?: string
           id?: string
           name?: string
+          phone?: string | null
+          state?: string | null
+          updated_at?: string | null
+          user_id?: string
+          zip?: string | null
+        }
+        Relationships: []
+      }
+      client_settings: {
+        Row: {
+          activity_tracking: boolean | null
+          created_at: string | null
+          email_notifications: boolean | null
+          id: string
+          marketing_emails: boolean | null
+          profile_visibility: boolean | null
+          sms_notifications: boolean | null
+          timezone: string | null
+          two_factor_auth: boolean | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          activity_tracking?: boolean | null
+          created_at?: string | null
+          email_notifications?: boolean | null
+          id?: string
+          marketing_emails?: boolean | null
+          profile_visibility?: boolean | null
+          sms_notifications?: boolean | null
+          timezone?: string | null
+          two_factor_auth?: boolean | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          activity_tracking?: boolean | null
+          created_at?: string | null
+          email_notifications?: boolean | null
+          id?: string
+          marketing_emails?: boolean | null
+          profile_visibility?: boolean | null
+          sms_notifications?: boolean | null
+          timezone?: string | null
+          two_factor_auth?: boolean | null
           updated_at?: string | null
           user_id?: string
         }
