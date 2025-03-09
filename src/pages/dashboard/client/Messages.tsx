@@ -95,7 +95,7 @@ const MessagesPage = () => {
               id: profile.id,
               name: profile.name,
               lastMessage: convo.content,
-              avatar: profile.image_url || profile.avatar_url,
+              avatar: 'image_url' in profile ? profile.image_url : profile.avatar_url,
               unreadCount: unreadMessages?.length || 0,
               user_id: otherUserId
             });

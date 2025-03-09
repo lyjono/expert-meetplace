@@ -13,7 +13,7 @@ export interface Message {
   receiver_name?: string;
 }
 
-export const sendMessage = async (receiverId: string, content: string): Promise<boolean> => {
+export const sendMessage = async (senderId: string, receiverId: string, content: string): Promise<boolean> => {
   try {
     const user = await getCurrentUser();
     if (!user) throw new Error('User not authenticated');
@@ -21,7 +21,7 @@ export const sendMessage = async (receiverId: string, content: string): Promise<
     const { error } = await supabase
       .from('messages')
       .insert({
-        sender_id: user.id,
+        sender_id: senderId,
         receiver_id: receiverId,
         content: content
       });
@@ -34,44 +34,75 @@ export const sendMessage = async (receiverId: string, content: string): Promise<
   }
 };
 
-export const getConversation = async (otherUserId: string): Promise<Message[]> => {
+export const getConversations = async (userId: string): Promise<any[]> => {
   try {
-    const user = await getCurrentUser();
-    if (!user) throw new Error('User not authenticated');
+    // Get all messages where the user is either the sender or receiver
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+      .order('created_at', { ascending: false });
 
+    if (error) throw error;
+
+    if (!data || data.length === 0) return [];
+
+    // Get unique conversations by combining sender and receiver
+    const conversations = new Map();
+    for (const message of data) {
+      const otherUserId = message.sender_id === userId 
+        ? message.receiver_id 
+        : message.sender_id;
+      
+      // Only add the first (most recent) message for each unique conversation
+      if (!conversations.has(otherUserId)) {
+        conversations.set(otherUserId, message);
+      }
+    }
+
+    return Array.from(conversations.values());
+  } catch (error) {
+    console.error('Error getting conversations:', error);
+    return [];
+  }
+};
+
+export const getConversation = async (userId: string, otherUserId: string): Promise<Message[]> => {
+  try {
     // Query messages where current user is either sender or receiver
     // and the other user is either receiver or sender
     const { data, error } = await supabase
       .from('messages')
       .select('*')
-      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-      .or(`sender_id.eq.${otherUserId},receiver_id.eq.${otherUserId}`)
+      .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
       .order('created_at', { ascending: true });
 
     if (error) throw error;
     
-    // Filter locally to get only messages between these two users
-    const filteredMessages = data.filter(msg => 
-      (msg.sender_id === user.id && msg.receiver_id === otherUserId) || 
-      (msg.sender_id === otherUserId && msg.receiver_id === user.id)
-    );
-    
     // Mark received messages as read
-    const messagesToUpdate = filteredMessages
-      .filter(msg => msg.receiver_id === user.id && !msg.read)
-      .map(msg => msg.id);
-      
-    if (messagesToUpdate.length > 0) {
-      await supabase
-        .from('messages')
-        .update({ read: true })
-        .in('id', messagesToUpdate);
-    }
+    await markMessagesAsRead(otherUserId, userId);
 
-    return filteredMessages || [];
+    return data || [];
   } catch (error) {
     console.error('Error getting conversation:', error);
     return [];
+  }
+};
+
+export const markMessagesAsRead = async (senderId: string, receiverId: string): Promise<boolean> => {
+  try {
+    const { error } = await supabase
+      .from('messages')
+      .update({ read: true })
+      .eq('sender_id', senderId)
+      .eq('receiver_id', receiverId)
+      .eq('read', false);
+      
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error('Error marking messages as read:', error);
+    return false;
   }
 };
 
