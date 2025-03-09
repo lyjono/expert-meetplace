@@ -105,14 +105,6 @@ export const subscribeToMessages = (
   errorCallback?: (error: any) => void
 ) => {
   try {
-    // Enable table for realtime
-    supabase
-      .from('messages')
-      .on('INSERT', (payload) => {
-        callback(payload.new as Message);
-      })
-      .subscribe();
-
     // Set up the channel subscription
     const channel = supabase
       .channel('messages-changes')

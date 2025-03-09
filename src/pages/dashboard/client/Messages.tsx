@@ -9,7 +9,7 @@ import { Search, Send } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { getCurrentUser } from '@/lib/supabase';
+import { getCurrentUser, supabase } from '@/lib/supabase';
 import { 
   getConversations, 
   getConversation, 
@@ -51,7 +51,6 @@ const MessagesPage = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Get current user
   useEffect(() => {
     const fetchUser = async () => {
       const user = await getCurrentUser();
@@ -60,7 +59,6 @@ const MessagesPage = () => {
     fetchUser();
   }, []);
 
-  // Check URL params for contact ID
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const contactId = params.get('contactId');
@@ -72,7 +70,6 @@ const MessagesPage = () => {
     }
   }, [location, contacts]);
 
-  // Get contacts/conversations
   useEffect(() => {
     const fetchContacts = async () => {
       if (!currentUser) return;
@@ -84,13 +81,10 @@ const MessagesPage = () => {
         const contactsData: Contact[] = [];
         
         for (const convo of conversations) {
-          // Get the other user ID
           const otherUserId = convo.sender_id === currentUser.id ? convo.receiver_id : convo.sender_id;
           
-          // Get user name from the users_view
           const userName = await getUserFullName(otherUserId);
           
-          // Count unread messages
           const { data: unreadMessages } = await supabase
             .from('messages')
             .select('id')
@@ -98,12 +92,11 @@ const MessagesPage = () => {
             .eq('receiver_id', currentUser.id)
             .eq('read', false);
             
-          // Create contact
           contactsData.push({
             id: convo.id,
             name: userName,
             lastMessage: convo.content,
-            avatar: '/placeholder.svg', // Default avatar
+            avatar: '/placeholder.svg',
             unreadCount: unreadMessages?.length || 0,
             user_id: otherUserId,
             lastMessageTime: formatMessageTime(convo.created_at)
@@ -122,7 +115,6 @@ const MessagesPage = () => {
     fetchContacts();
   }, [currentUser]);
 
-  // Subscribe to new messages
   useEffect(() => {
     if (!currentUser) return;
     
@@ -130,9 +122,7 @@ const MessagesPage = () => {
       async (newMessage) => {
         console.log('New message received:', newMessage);
         
-        // If message involves current user, update UI
         if (newMessage.sender_id === currentUser.id || newMessage.receiver_id === currentUser.id) {
-          // If viewing the conversation with this user, add message to chat
           if (activeContact && 
              (newMessage.sender_id === activeContact.user_id || newMessage.receiver_id === activeContact.user_id)) {
             setMessages(prev => [
@@ -143,13 +133,11 @@ const MessagesPage = () => {
               }
             ]);
             
-            // Mark as read if received
             if (newMessage.receiver_id === currentUser.id) {
               await markMessagesAsRead(activeContact.user_id, currentUser.id);
             }
           }
           
-          // Update contacts list to show new message
           const otherUserId = newMessage.sender_id === currentUser.id 
             ? newMessage.receiver_id 
             : newMessage.sender_id;
@@ -157,7 +145,6 @@ const MessagesPage = () => {
           const existingContact = contacts.find(c => c.user_id === otherUserId);
           
           if (existingContact) {
-            // Update existing contact
             setContacts(prev => prev.map(contact => 
               contact.user_id === otherUserId 
                 ? { 
@@ -171,7 +158,6 @@ const MessagesPage = () => {
                 : contact
             ));
           } else {
-            // New contact
             const userName = await getUserFullName(otherUserId);
             setContacts(prev => [
               {
@@ -197,7 +183,6 @@ const MessagesPage = () => {
     return unsubscribe;
   }, [currentUser, activeContact, contacts]);
 
-  // Load messages when active contact changes
   useEffect(() => {
     const loadMessages = async () => {
       if (currentUser && activeContact) {
@@ -208,10 +193,8 @@ const MessagesPage = () => {
             isMine: msg.sender_id === currentUser.id
           })));
           
-          // Mark messages as read
           await markMessagesAsRead(activeContact.user_id, currentUser.id);
           
-          // Update the unread count for this contact
           setContacts(prev => prev.map(contact => 
             contact.user_id === activeContact.user_id 
               ? { ...contact, unreadCount: 0 } 
@@ -227,7 +210,6 @@ const MessagesPage = () => {
     loadMessages();
   }, [currentUser, activeContact]);
 
-  // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -256,17 +238,14 @@ const MessagesPage = () => {
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     
-    // If less than 24 hours, show time
     if (diff < 24 * 60 * 60 * 1000) {
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
     
-    // If same year, show month and day
     if (date.getFullYear() === now.getFullYear()) {
       return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
     }
     
-    // Otherwise show date with year
     return date.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
