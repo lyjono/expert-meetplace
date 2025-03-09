@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -11,8 +12,9 @@ import { Calendar, MessageSquare, FileText, Calendar as CalendarIcon, Clock, Sta
 import { getExpertById } from "@/services/experts";
 import { createAppointment } from "@/services/appointments";
 import { getAvailableTimesForDate } from "@/services/availability";
-import { sendMessage, getProviderUserId, getCurrentUser } from "@/services/realTimeMessages";
+import { sendMessage, getProviderUserId } from "@/services/realTimeMessages";
 import { supabase } from "@/lib/supabase";
+import { getCurrentUser } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";

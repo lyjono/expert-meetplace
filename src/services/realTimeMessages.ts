@@ -1,4 +1,3 @@
-
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
 
@@ -36,7 +35,6 @@ export const sendMessage = async (senderId: string, receiverId: string, content:
 
 export const getConversations = async (userId: string): Promise<any[]> => {
   try {
-    // Get all messages where the user is either the sender or receiver
     const { data, error } = await supabase
       .from('messages')
       .select('*')
@@ -47,14 +45,12 @@ export const getConversations = async (userId: string): Promise<any[]> => {
 
     if (!data || data.length === 0) return [];
 
-    // Get unique conversations by combining sender and receiver
     const conversations = new Map();
     for (const message of data) {
       const otherUserId = message.sender_id === userId 
         ? message.receiver_id 
         : message.sender_id;
       
-      // Only add the first (most recent) message for each unique conversation
       if (!conversations.has(otherUserId)) {
         conversations.set(otherUserId, message);
       }
@@ -69,8 +65,6 @@ export const getConversations = async (userId: string): Promise<any[]> => {
 
 export const getConversation = async (userId: string, otherUserId: string): Promise<Message[]> => {
   try {
-    // Query messages where current user is either sender or receiver
-    // and the other user is either receiver or sender
     const { data, error } = await supabase
       .from('messages')
       .select('*')
@@ -79,7 +73,6 @@ export const getConversation = async (userId: string, otherUserId: string): Prom
 
     if (error) throw error;
     
-    // Mark received messages as read
     await markMessagesAsRead(otherUserId, userId);
 
     return data || [];
@@ -165,3 +158,5 @@ export const getClientUserId = async (clientId: string): Promise<string | null> 
     return null;
   }
 };
+
+export { getCurrentUser };
