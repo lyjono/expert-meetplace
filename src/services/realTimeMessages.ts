@@ -1,4 +1,3 @@
-
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
 
@@ -11,19 +10,56 @@ export interface Message {
   read: boolean;
   sender_name?: string;
   receiver_name?: string;
+  attachment_url?: string;
+  attachment_name?: string;
+  attachment_type?: string;
+  is_video_call?: boolean;
 }
 
-export const sendMessage = async (senderId: string, receiverId: string, content: string): Promise<boolean> => {
+export const sendMessage = async (
+  senderId: string, 
+  receiverId: string, 
+  content: string, 
+  attachment?: File
+): Promise<boolean> => {
   try {
     const user = await getCurrentUser();
     if (!user) throw new Error('User not authenticated');
+
+    let attachmentUrl = null;
+    let attachmentName = null;
+    let attachmentType = null;
+
+    // If there's an attachment, upload it to Supabase Storage
+    if (attachment) {
+      const fileName = `${Date.now()}_${attachment.name}`;
+      const { data, error } = await supabase.storage
+        .from('chat_attachments')
+        .upload(`${senderId}/${fileName}`, attachment, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (error) throw error;
+      
+      const { data: publicUrl } = supabase.storage
+        .from('chat_attachments')
+        .getPublicUrl(`${senderId}/${fileName}`);
+      
+      attachmentUrl = publicUrl.publicUrl;
+      attachmentName = attachment.name;
+      attachmentType = attachment.type;
+    }
 
     const { error } = await supabase
       .from('messages')
       .insert({
         sender_id: senderId,
         receiver_id: receiverId,
-        content: content
+        content: content,
+        attachment_url: attachmentUrl,
+        attachment_name: attachmentName,
+        attachment_type: attachmentType
       });
 
     if (error) throw error;
@@ -31,6 +67,30 @@ export const sendMessage = async (senderId: string, receiverId: string, content:
   } catch (error) {
     console.error('Error sending message:', error);
     return false;
+  }
+};
+
+export const startVideoCall = async (senderId: string, receiverId: string): Promise<string | null> => {
+  try {
+    // Generate a unique room ID for the video call
+    const roomId = `video_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
+    // Send a special message to indicate a video call invitation
+    const { error } = await supabase
+      .from('messages')
+      .insert({
+        sender_id: senderId,
+        receiver_id: receiverId,
+        content: 'Video call invitation',
+        is_video_call: true,
+        attachment_url: roomId // Using attachment_url to store the room ID
+      });
+
+    if (error) throw error;
+    return roomId;
+  } catch (error) {
+    console.error('Error starting video call:', error);
+    return null;
   }
 };
 

@@ -1,15 +1,16 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Search, Send } from 'lucide-react';
+import { Search, Send, Paperclip, Video } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getCurrentUser, supabase } from '@/lib/supabase';
 import { 
   getConversations, 
@@ -17,7 +18,8 @@ import {
   sendMessage, 
   markMessagesAsRead, 
   subscribeToMessages,
-  getUserFullName 
+  getUserFullName,
+  startVideoCall
 } from '@/services/realTimeMessages';
 import { toast } from 'sonner';
 
@@ -38,18 +40,27 @@ type Message = {
   receiver_id: string;
   created_at: string;
   read: boolean;
+  attachment_url?: string;
+  attachment_name?: string;
+  attachment_type?: string;
+  is_video_call?: boolean;
   isMine?: boolean;
 };
 
 const MessagesPage = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [fileAttachment, setFileAttachment] = useState<File | null>(null);
+  const [videoCallRoom, setVideoCallRoom] = useState<string | null>(null);
+  const [isVideoCallActive, setIsVideoCallActive] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
@@ -124,6 +135,20 @@ const MessagesPage = () => {
         console.log('New message received:', newMessage);
         
         if (newMessage.sender_id === currentUser.id || newMessage.receiver_id === currentUser.id) {
+          // Handle video call invitations
+          if (newMessage.is_video_call && newMessage.receiver_id === currentUser.id) {
+            toast.success(`Incoming video call`, {
+              action: {
+                label: "Join",
+                onClick: () => {
+                  setVideoCallRoom(newMessage.attachment_url || null);
+                  setIsVideoCallActive(true);
+                }
+              },
+              duration: 10000,
+            });
+          }
+          
           if (activeContact && 
              (newMessage.sender_id === activeContact.user_id || newMessage.receiver_id === activeContact.user_id)) {
             setMessages(prev => [
@@ -150,7 +175,7 @@ const MessagesPage = () => {
               contact.user_id === otherUserId 
                 ? { 
                     ...contact, 
-                    lastMessage: newMessage.content,
+                    lastMessage: newMessage.is_video_call ? "Video call" : newMessage.content,
                     lastMessageTime: "Just now",
                     unreadCount: newMessage.sender_id === contact.user_id && newMessage.receiver_id === currentUser.id 
                       ? contact.unreadCount + 1 
@@ -164,7 +189,7 @@ const MessagesPage = () => {
               {
                 id: newMessage.id,
                 name: userName,
-                lastMessage: newMessage.content,
+                lastMessage: newMessage.is_video_call ? "Video call" : newMessage.content,
                 avatar: '/placeholder.svg',
                 unreadCount: newMessage.sender_id === otherUserId ? 1 : 0,
                 user_id: otherUserId,
@@ -215,14 +240,30 @@ const MessagesPage = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFileAttachment(e.target.files[0]);
+      toast.success(`File attached: ${e.target.files[0].name}`);
+    }
+  };
+
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !currentUser || !activeContact) return;
+    if ((!newMessage.trim() && !fileAttachment) || !currentUser || !activeContact) return;
     
     try {
-      const success = await sendMessage(currentUser.id, activeContact.user_id, newMessage);
+      const success = await sendMessage(
+        currentUser.id, 
+        activeContact.user_id, 
+        newMessage.trim() || (fileAttachment ? `Sent a file: ${fileAttachment.name}` : ""),
+        fileAttachment
+      );
       
       if (success) {
         setNewMessage("");
+        setFileAttachment(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
       } else {
         toast.error('Failed to send message');
       }
@@ -230,6 +271,29 @@ const MessagesPage = () => {
       console.error('Error sending message:', error);
       toast.error('Failed to send message');
     }
+  };
+
+  const handleStartVideoCall = async () => {
+    if (!currentUser || !activeContact) return;
+    
+    try {
+      const roomId = await startVideoCall(currentUser.id, activeContact.user_id);
+      if (roomId) {
+        setVideoCallRoom(roomId);
+        setIsVideoCallActive(true);
+        toast.success(`Starting video call with ${activeContact.name}`);
+      } else {
+        toast.error('Failed to start video call');
+      }
+    } catch (error) {
+      console.error('Error starting video call:', error);
+      toast.error('Failed to start video call');
+    }
+  };
+
+  const handleEndVideoCall = () => {
+    setIsVideoCallActive(false);
+    setVideoCallRoom(null);
   };
 
   const formatMessageTime = (timeString: string) => {
@@ -386,14 +450,24 @@ const MessagesPage = () => {
                 {activeContact ? (
                   <>
                     <div className="p-4 border-b">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage src={activeContact.avatar || "/placeholder.svg"} alt={activeContact.name} />
-                          <AvatarFallback>{activeContact.name.charAt(0)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <h3 className="font-medium">{activeContact.name}</h3>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10">
+                            <AvatarImage src={activeContact.avatar || "/placeholder.svg"} alt={activeContact.name} />
+                            <AvatarFallback>{activeContact.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <h3 className="font-medium">{activeContact.name}</h3>
+                          </div>
                         </div>
+                        <Button 
+                          variant="outline" 
+                          size="icon"
+                          className="ml-auto"
+                          onClick={handleStartVideoCall}
+                        >
+                          <Video className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                     
@@ -416,7 +490,56 @@ const MessagesPage = () => {
                                     : "bg-muted"
                                 }`}
                               >
-                                <p className="text-sm">{message.content}</p>
+                                {message.is_video_call ? (
+                                  <div className="flex flex-col space-y-2">
+                                    <p className="text-sm font-medium">Video Call</p>
+                                    <Button 
+                                      variant={message.isMine ? "outline" : "secondary"} 
+                                      size="sm"
+                                      onClick={() => {
+                                        setVideoCallRoom(message.attachment_url || null);
+                                        setIsVideoCallActive(true);
+                                      }}
+                                    >
+                                      Join Call
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <p className="text-sm">{message.content}</p>
+                                    {message.attachment_url && (
+                                      <div className="mt-2">
+                                        {message.attachment_type?.startsWith('image/') ? (
+                                          <div className="mt-2">
+                                            <img 
+                                              src={message.attachment_url} 
+                                              alt={message.attachment_name || "Attachment"} 
+                                              className="max-w-full rounded-md max-h-[200px]"
+                                            />
+                                          </div>
+                                        ) : message.attachment_type?.startsWith('video/') ? (
+                                          <div className="mt-2">
+                                            <video 
+                                              src={message.attachment_url} 
+                                              controls 
+                                              className="max-w-full rounded-md max-h-[200px]"
+                                            />
+                                          </div>
+                                        ) : (
+                                          <div className="mt-2">
+                                            <Button 
+                                              variant={message.isMine ? "outline" : "secondary"} 
+                                              size="sm"
+                                              onClick={() => window.open(message.attachment_url, '_blank')}
+                                            >
+                                              Download {message.attachment_name || "File"}
+                                            </Button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </>
+                                )}
                                 <span className={`text-xs ${message.isMine ? "text-primary-foreground/80" : "text-muted-foreground"} block mt-1`}>
                                   {formatMessageTime(message.created_at)}
                                 </span>
@@ -429,6 +552,23 @@ const MessagesPage = () => {
                     </ScrollArea>
                     
                     <div className="p-4 border-t mt-auto">
+                      {fileAttachment && (
+                        <div className="flex items-center gap-2 bg-muted p-2 rounded-md mb-2">
+                          <span className="text-sm truncate flex-1">{fileAttachment.name}</span>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => {
+                              setFileAttachment(null);
+                              if (fileInputRef.current) {
+                                fileInputRef.current.value = "";
+                              }
+                            }}
+                          >
+                            ✕
+                          </Button>
+                        </div>
+                      )}
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
@@ -447,6 +587,20 @@ const MessagesPage = () => {
                             }
                           }}
                         />
+                        <Button 
+                          type="button" 
+                          size="icon" 
+                          variant="outline"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <Paperclip className="h-4 w-4" />
+                          <input 
+                            type="file" 
+                            className="hidden" 
+                            ref={fileInputRef}
+                            onChange={handleFileSelect}
+                          />
+                        </Button>
                         <Button type="submit" size="icon">
                           <Send className="h-4 w-4" />
                         </Button>
@@ -468,6 +622,34 @@ const MessagesPage = () => {
           </Tabs>
         </Card>
       </div>
+
+      <Dialog open={isVideoCallActive} onOpenChange={setIsVideoCallActive}>
+        <DialogContent className="sm:max-w-[800px] h-[600px]">
+          <DialogHeader>
+            <DialogTitle>Video Call {activeContact && `with ${activeContact.name}`}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col h-full">
+            <div className="flex-1 relative bg-muted rounded-md overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-full bg-black/50 flex items-center justify-center text-white">
+                {videoCallRoom ? (
+                  <div className="text-center">
+                    <p>Video call room: {videoCallRoom}</p>
+                    <p className="text-sm text-muted">Connecting...</p>
+                  </div>
+                ) : (
+                  <p>Video connection not available</p>
+                )}
+              </div>
+              <div className="absolute bottom-5 right-5 w-1/4 h-1/4 bg-accent rounded-md border"></div>
+            </div>
+            <div className="mt-4 flex justify-center">
+              <Button variant="destructive" onClick={handleEndVideoCall}>
+                End Call
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };
