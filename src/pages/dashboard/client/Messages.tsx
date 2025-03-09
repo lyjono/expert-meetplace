@@ -1,16 +1,23 @@
-
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Search, Send } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { getCurrentUser, supabase } from '@/lib/supabase';
-import { getConversations, getConversation, sendMessage, markMessagesAsRead } from '@/services/realTimeMessages';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import { getCurrentUser } from '@/lib/supabase';
+import { 
+  getConversations, 
+  getConversation, 
+  sendMessage, 
+  markMessagesAsRead, 
+  subscribeToMessages,
+  getUserFullName 
+} from '@/services/realTimeMessages';
 import { toast } from 'sonner';
 
 type Contact = {
@@ -20,6 +27,7 @@ type Contact = {
   avatar?: string;
   unreadCount: number;
   user_id: string;
+  lastMessageTime: string;
 };
 
 type Message = {
@@ -33,6 +41,7 @@ type Message = {
 };
 
 const MessagesPage = () => {
+  const location = useLocation();
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -51,6 +60,18 @@ const MessagesPage = () => {
     fetchUser();
   }, []);
 
+  // Check URL params for contact ID
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const contactId = params.get('contactId');
+    if (contactId && contacts.length > 0) {
+      const contact = contacts.find(c => c.user_id === contactId);
+      if (contact) {
+        setActiveContact(contact);
+      }
+    }
+  }, [location, contacts]);
+
   // Get contacts/conversations
   useEffect(() => {
     const fetchContacts = async () => {
@@ -66,40 +87,27 @@ const MessagesPage = () => {
           // Get the other user ID
           const otherUserId = convo.sender_id === currentUser.id ? convo.receiver_id : convo.sender_id;
           
-          // Get the other user's profile (either client or provider)
-          const { data: providerData } = await supabase
-            .from('provider_profiles')
-            .select('id, name, image_url, user_id')
-            .eq('user_id', otherUserId)
-            .single();
-            
-          const { data: clientData } = await supabase
-            .from('client_profiles')
-            .select('id, name, avatar_url, user_id')
-            .eq('user_id', otherUserId)
-            .single();
-            
-          const profile = providerData || clientData;
+          // Get user name from the users_view
+          const userName = await getUserFullName(otherUserId);
           
-          if (profile) {
-            // Count unread messages
-            const { data: unreadMessages } = await supabase
-              .from('messages')
-              .select('id')
-              .eq('sender_id', otherUserId)
-              .eq('receiver_id', currentUser.id)
-              .eq('read', false);
-              
-            // Create contact
-            contactsData.push({
-              id: profile.id,
-              name: profile.name,
-              lastMessage: convo.content,
-              avatar: 'image_url' in profile ? profile.image_url : profile.avatar_url,
-              unreadCount: unreadMessages?.length || 0,
-              user_id: otherUserId
-            });
-          }
+          // Count unread messages
+          const { data: unreadMessages } = await supabase
+            .from('messages')
+            .select('id')
+            .eq('sender_id', otherUserId)
+            .eq('receiver_id', currentUser.id)
+            .eq('read', false);
+            
+          // Create contact
+          contactsData.push({
+            id: convo.id,
+            name: userName,
+            lastMessage: convo.content,
+            avatar: '/placeholder.svg', // Default avatar
+            unreadCount: unreadMessages?.length || 0,
+            user_id: otherUserId,
+            lastMessageTime: formatMessageTime(convo.created_at)
+          });
         }
         
         setContacts(contactsData);
@@ -112,50 +120,82 @@ const MessagesPage = () => {
     };
     
     fetchContacts();
+  }, [currentUser]);
+
+  // Subscribe to new messages
+  useEffect(() => {
+    if (!currentUser) return;
     
-    // Subscribe to new messages
-    const subscription = supabase
-      .channel('messages-channel')
-      .on('postgres_changes', 
-        { event: 'INSERT', schema: 'public', table: 'messages' },
-        async (payload) => {
-          console.log('New message received:', payload);
-          
-          // Only update if the message is related to the current user
-          if (currentUser && 
-             (payload.new.sender_id === currentUser.id || 
-              payload.new.receiver_id === currentUser.id)) {
-            
-            // Refresh contacts list to update unread counts and last messages
-            const conversations = await getConversations(currentUser.id);
-            fetchContacts();
-            
-            // If currently viewing this conversation, add the message to the chat
-            if (activeContact && 
-               ((payload.new.sender_id === activeContact.user_id && payload.new.receiver_id === currentUser.id) || 
-                (payload.new.receiver_id === activeContact.user_id && payload.new.sender_id === currentUser.id))) {
-              
-              setMessages(prev => [
-                ...prev, 
-                {
-                  ...payload.new as Message,
-                  isMine: payload.new.sender_id === currentUser.id
-                }
-              ]);
-              
-              // Mark message as read if it's for the current user
-              if (payload.new.receiver_id === currentUser.id) {
-                markMessagesAsRead(activeContact.user_id, currentUser.id);
+    const unsubscribe = subscribeToMessages(
+      async (newMessage) => {
+        console.log('New message received:', newMessage);
+        
+        // If message involves current user, update UI
+        if (newMessage.sender_id === currentUser.id || newMessage.receiver_id === currentUser.id) {
+          // If viewing the conversation with this user, add message to chat
+          if (activeContact && 
+             (newMessage.sender_id === activeContact.user_id || newMessage.receiver_id === activeContact.user_id)) {
+            setMessages(prev => [
+              ...prev, 
+              {
+                ...newMessage,
+                isMine: newMessage.sender_id === currentUser.id
               }
+            ]);
+            
+            // Mark as read if received
+            if (newMessage.receiver_id === currentUser.id) {
+              await markMessagesAsRead(activeContact.user_id, currentUser.id);
             }
           }
-        })
-      .subscribe();
-      
-    return () => {
-      supabase.removeChannel(subscription);
-    };
-  }, [currentUser, activeContact]);
+          
+          // Update contacts list to show new message
+          const otherUserId = newMessage.sender_id === currentUser.id 
+            ? newMessage.receiver_id 
+            : newMessage.sender_id;
+          
+          const existingContact = contacts.find(c => c.user_id === otherUserId);
+          
+          if (existingContact) {
+            // Update existing contact
+            setContacts(prev => prev.map(contact => 
+              contact.user_id === otherUserId 
+                ? { 
+                    ...contact, 
+                    lastMessage: newMessage.content,
+                    lastMessageTime: "Just now",
+                    unreadCount: newMessage.sender_id === contact.user_id && newMessage.receiver_id === currentUser.id 
+                      ? contact.unreadCount + 1 
+                      : contact.unreadCount
+                  } 
+                : contact
+            ));
+          } else {
+            // New contact
+            const userName = await getUserFullName(otherUserId);
+            setContacts(prev => [
+              {
+                id: newMessage.id,
+                name: userName,
+                lastMessage: newMessage.content,
+                avatar: '/placeholder.svg',
+                unreadCount: newMessage.sender_id === otherUserId ? 1 : 0,
+                user_id: otherUserId,
+                lastMessageTime: "Just now"
+              },
+              ...prev
+            ]);
+          }
+        }
+      },
+      (error) => {
+        console.error('Subscription error:', error);
+        toast.error('Lost connection to message service');
+      }
+    );
+    
+    return unsubscribe;
+  }, [currentUser, activeContact, contacts]);
 
   // Load messages when active contact changes
   useEffect(() => {
@@ -169,11 +209,11 @@ const MessagesPage = () => {
           })));
           
           // Mark messages as read
-          markMessagesAsRead(activeContact.user_id, currentUser.id);
+          await markMessagesAsRead(activeContact.user_id, currentUser.id);
           
           // Update the unread count for this contact
           setContacts(prev => prev.map(contact => 
-            contact.id === activeContact.id 
+            contact.user_id === activeContact.user_id 
               ? { ...contact, unreadCount: 0 } 
               : contact
           ));
@@ -207,6 +247,27 @@ const MessagesPage = () => {
       console.error('Error sending message:', error);
       toast.error('Failed to send message');
     }
+  };
+
+  const formatMessageTime = (timeString: string) => {
+    if (!timeString) return '';
+    
+    const date = new Date(timeString);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    
+    // If less than 24 hours, show time
+    if (diff < 24 * 60 * 60 * 1000) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    // If same year, show month and day
+    if (date.getFullYear() === now.getFullYear()) {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+    
+    // Otherwise show date with year
+    return date.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
   const filteredContacts = contacts.filter(contact => 
@@ -266,7 +327,7 @@ const MessagesPage = () => {
                       <div
                         key={contact.id}
                         className={`flex items-center gap-4 p-4 cursor-pointer hover:bg-muted transition-colors ${
-                          activeContact?.id === contact.id ? "bg-muted" : ""
+                          activeContact?.user_id === contact.user_id ? "bg-muted" : ""
                         }`}
                         onClick={() => setActiveContact(contact)}
                       >
@@ -277,15 +338,18 @@ const MessagesPage = () => {
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between items-center mb-1">
                             <h4 className="text-sm font-medium truncate">{contact.name}</h4>
+                            <span className="text-xs text-muted-foreground">{contact.lastMessageTime}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <p className="text-xs text-muted-foreground truncate">
+                              {contact.lastMessage || "No messages yet"}
+                            </p>
                             {contact.unreadCount > 0 && (
-                              <Badge className="h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">
+                              <Badge className="h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs ml-2">
                                 {contact.unreadCount}
                               </Badge>
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {contact.lastMessage || "No messages yet"}
-                          </p>
                         </div>
                       </div>
                     ))
@@ -310,7 +374,7 @@ const MessagesPage = () => {
                         <div
                           key={contact.id}
                           className={`flex items-center gap-4 p-4 cursor-pointer hover:bg-muted transition-colors ${
-                            activeContact?.id === contact.id ? "bg-muted" : ""
+                            activeContact?.user_id === contact.user_id ? "bg-muted" : ""
                           }`}
                           onClick={() => setActiveContact(contact)}
                         >
@@ -321,13 +385,16 @@ const MessagesPage = () => {
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between items-center mb-1">
                               <h4 className="text-sm font-medium truncate">{contact.name}</h4>
-                              <Badge className="h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">
+                              <span className="text-xs text-muted-foreground">{contact.lastMessageTime}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <p className="text-xs text-muted-foreground truncate">
+                                {contact.lastMessage || "No messages yet"}
+                              </p>
+                              <Badge className="h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs ml-2">
                                 {contact.unreadCount}
                               </Badge>
                             </div>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {contact.lastMessage || "No messages yet"}
-                            </p>
                           </div>
                         </div>
                       ))
@@ -346,7 +413,6 @@ const MessagesPage = () => {
                         </Avatar>
                         <div>
                           <h3 className="font-medium">{activeContact.name}</h3>
-                          <p className="text-xs text-muted-foreground">Online</p>
                         </div>
                       </div>
                     </div>
@@ -372,10 +438,7 @@ const MessagesPage = () => {
                               >
                                 <p className="text-sm">{message.content}</p>
                                 <span className={`text-xs ${message.isMine ? "text-primary-foreground/80" : "text-muted-foreground"} block mt-1`}>
-                                  {new Date(message.created_at).toLocaleTimeString([], {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
+                                  {formatMessageTime(message.created_at)}
                                 </span>
                               </div>
                             </div>
@@ -397,6 +460,12 @@ const MessagesPage = () => {
                           placeholder="Type your message..."
                           value={newMessage}
                           onChange={(e) => setNewMessage(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage();
+                            }
+                          }}
                         />
                         <Button type="submit" size="icon">
                           <Send className="h-4 w-4" />

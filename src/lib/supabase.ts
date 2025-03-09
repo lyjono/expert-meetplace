@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 
 // Get environment variables
@@ -134,4 +133,16 @@ export const getClientSettings = async () => {
     console.error('Error getting client settings:', error);
     return null;
   }
+};
+
+export const enableRealtimeForMessages = async () => {
+  const { error } = await supabase
+    .rpc('enable_realtime_for_messages')
+    .single();
+  
+  if (error) {
+    console.error('Error enabling realtime for messages:', error);
+    return false;
+  }
+  return true;
 };

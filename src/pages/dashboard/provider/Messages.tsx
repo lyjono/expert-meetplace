@@ -5,13 +5,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, Send, Paperclip } from "lucide-react";
+import { Search, Send } from "lucide-react";
 import { toast } from "sonner";
 import { 
   getConversation, 
   sendMessage, 
   subscribeToMessages, 
-  Message as MessageType 
+  Message as MessageType,
+  getUserFullName
 } from "@/services/realTimeMessages";
 import { getCurrentUser } from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
@@ -35,6 +36,7 @@ const Messages = () => {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingContacts, setIsLoadingContacts] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   useEffect(() => {
@@ -79,13 +81,7 @@ const Messages = () => {
 
         const contactsData: Contact[] = [];
         for (const contactId of contactIds) {
-          const { data: userData, error: userError } = await supabase
-            .from('users_view')
-            .select('*')
-            .eq('user_id', contactId)
-            .single();
-
-          if (userError || !userData) continue;
+          const userName = await getUserFullName(contactId);
 
           const latestMessage = messagesData.find(msg => 
             (msg.sender_id === contactId && msg.receiver_id === user.id) || 
@@ -102,11 +98,11 @@ const Messages = () => {
 
           contactsData.push({
             id: contactId,
-            name: userData.name || 'Unknown User',
+            name: userName,
             lastMessage: latestMessage.content,
             lastMessageTime: formatMessageTime(latestMessage.created_at),
             unread: unreadCount,
-            status: userData.user_type === 'client' ? 'Client' : 'Provider'
+            status: 'User'
           });
         }
 
@@ -142,40 +138,50 @@ const Messages = () => {
     if (!currentUserId) return;
     
     const unsubscribe = subscribeToMessages(
-      (newMessage) => {
-        if (
-          selectedContactId && 
-          (newMessage.sender_id === selectedContactId || newMessage.receiver_id === selectedContactId)
-        ) {
-          setMessages(prev => [...prev, newMessage]);
-        }
+      async (newMessage) => {
+        console.log("New message received:", newMessage);
         
-        setContacts(prev => 
-          prev.map(contact => {
-            if (contact.id === newMessage.sender_id || contact.id === newMessage.receiver_id) {
-              return {
-                ...contact,
+        if (newMessage.sender_id === currentUserId || newMessage.receiver_id === currentUserId) {
+          if (selectedContactId && 
+             (newMessage.sender_id === selectedContactId || newMessage.receiver_id === selectedContactId)) {
+            setMessages(prev => [...prev, newMessage]);
+          }
+          
+          const otherUserId = newMessage.sender_id === currentUserId 
+            ? newMessage.receiver_id 
+            : newMessage.sender_id;
+          
+          const existingContact = contacts.find(c => c.id === otherUserId);
+          
+          if (existingContact) {
+            setContacts(prev => 
+              prev.map(contact => {
+                if (contact.id === otherUserId) {
+                  return {
+                    ...contact,
+                    lastMessage: newMessage.content,
+                    lastMessageTime: "Just now",
+                    unread: newMessage.sender_id === otherUserId ? contact.unread + 1 : contact.unread
+                  };
+                }
+                return contact;
+              })
+            );
+          } else {
+            const userName = await getUserFullName(otherUserId);
+            setContacts(prev => [
+              {
+                id: otherUserId,
+                name: userName,
                 lastMessage: newMessage.content,
                 lastMessageTime: "Just now",
-                unread: newMessage.sender_id === contact.id ? contact.unread + 1 : contact.unread
-              };
-            }
-            return contact;
-          })
-        );
-
-        if (!contacts.some(c => c.id === newMessage.sender_id) && newMessage.receiver_id === currentUserId) {
-          setContacts(prev => [
-            ...prev,
-            {
-              id: newMessage.sender_id,
-              name: newMessage.sender_name || 'New Contact',
-              lastMessage: newMessage.content,
-              lastMessageTime: "Just now",
-              unread: 1,
-              status: 'New Contact'
-            }
-          ]);
+                unread: newMessage.sender_id === otherUserId ? 1 : 0,
+                status: 'New Contact',
+                avatar: '/placeholder.svg'
+              },
+              ...prev
+            ]);
+          }
         }
       },
       (error) => {
@@ -226,9 +232,26 @@ const Messages = () => {
   };
 
   const formatMessageTime = (timeString: string) => {
+    if (!timeString) return '';
+    
     const date = new Date(timeString);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    
+    if (diff < 24 * 60 * 60 * 1000) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    if (date.getFullYear() === now.getFullYear()) {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+    
+    return date.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
   };
+
+  const filteredContacts = contacts.filter(contact => 
+    contact.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <DashboardLayout userType="provider">
@@ -248,15 +271,17 @@ const Messages = () => {
                 type="search"
                 placeholder="Search contacts..."
                 className="pl-8"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
             <div className="space-y-1 mt-3">
               {isLoadingContacts ? (
                 <div className="text-center py-4">Loading contacts...</div>
-              ) : contacts.length === 0 ? (
+              ) : filteredContacts.length === 0 ? (
                 <div className="text-center py-4 text-muted-foreground">No conversations yet</div>
               ) : (
-                contacts.map((contact) => (
+                filteredContacts.map((contact) => (
                   <div
                     key={contact.id}
                     className={`flex items-center gap-3 p-2 rounded-md cursor-pointer ${
@@ -354,14 +379,6 @@ const Messages = () => {
 
               <div className="p-3 border-t">
                 <div className="flex items-center gap-2">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="rounded-full"
-                    type="button"
-                  >
-                    <Paperclip className="h-5 w-5" />
-                  </Button>
                   <Input
                     placeholder="Type a message..."
                     value={messageText}

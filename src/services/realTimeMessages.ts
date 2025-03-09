@@ -1,3 +1,4 @@
+
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
 
@@ -104,8 +105,17 @@ export const subscribeToMessages = (
   errorCallback?: (error: any) => void
 ) => {
   try {
+    // Enable table for realtime
+    supabase
+      .from('messages')
+      .on('INSERT', (payload) => {
+        callback(payload.new as Message);
+      })
+      .subscribe();
+
+    // Set up the channel subscription
     const channel = supabase
-      .channel('public:messages')
+      .channel('messages-changes')
       .on('postgres_changes', 
         { event: 'INSERT', schema: 'public', table: 'messages' },
         (payload) => {
@@ -156,6 +166,22 @@ export const getClientUserId = async (clientId: string): Promise<string | null> 
   } catch (error) {
     console.error('Error getting client user ID:', error);
     return null;
+  }
+};
+
+export const getUserFullName = async (userId: string): Promise<string> => {
+  try {
+    const { data, error } = await supabase
+      .from('users_view')
+      .select('name')
+      .eq('user_id', userId)
+      .single();
+      
+    if (error) throw error;
+    return data?.name || 'Unknown User';
+  } catch (error) {
+    console.error('Error getting user name:', error);
+    return 'Unknown User';
   }
 };
 
