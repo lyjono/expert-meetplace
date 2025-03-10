@@ -10,18 +10,19 @@ interface VideoCallProps {
   onEndCall: () => void;
 }
 
-// Simple WebRTC implementation for direct peer-to-peer video calls
+// Enhanced WebRTC implementation with better error handling for permissions
 export const VideoCall: React.FC<VideoCallProps> = ({ roomId, userName, onEndCall }) => {
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
+  const [permissionsError, setPermissionsError] = useState<string | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
-  // Configure and initialize WebRTC connection
+  // Configure and initialize WebRTC connection with better error handling
   useEffect(() => {
     const initCall = async () => {
       try {
@@ -35,25 +36,67 @@ export const VideoCall: React.FC<VideoCallProps> = ({ roomId, userName, onEndCal
         
         peerConnectionRef.current = new RTCPeerConnection(configuration);
         
-        // Get local media stream
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true, 
-          audio: true 
-        });
-        
-        localStreamRef.current = stream;
-        
-        // Display local video
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
-        
-        // Add local tracks to peer connection
-        stream.getTracks().forEach(track => {
-          if (peerConnectionRef.current) {
-            peerConnectionRef.current.addTrack(track, stream);
+        // Try to get user media with both audio and video
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: true, 
+            audio: true 
+          });
+          
+          localStreamRef.current = stream;
+          
+          // Display local video
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
           }
-        });
+          
+          // Add local tracks to peer connection
+          stream.getTracks().forEach(track => {
+            if (peerConnectionRef.current) {
+              peerConnectionRef.current.addTrack(track, stream);
+            }
+          });
+        } catch (mediaError: any) {
+          console.error("Media permission error:", mediaError);
+          
+          // Try fallback to video-only if audio failed
+          if (mediaError.name === 'NotReadableError' || 
+              mediaError.name === 'NotAllowedError' ||
+              mediaError.message.includes('audio')) {
+            
+            try {
+              // Fallback to video only
+              const videoOnlyStream = await navigator.mediaDevices.getUserMedia({ 
+                video: true, 
+                audio: false 
+              });
+              
+              localStreamRef.current = videoOnlyStream;
+              
+              if (localVideoRef.current) {
+                localVideoRef.current.srcObject = videoOnlyStream;
+              }
+              
+              // Add video-only tracks to peer connection
+              videoOnlyStream.getTracks().forEach(track => {
+                if (peerConnectionRef.current) {
+                  peerConnectionRef.current.addTrack(track, videoOnlyStream);
+                }
+              });
+              
+              setIsMicMuted(true);
+              setPermissionsError("Microphone access denied. Video call will proceed without audio.");
+              toast.warning("Microphone access denied. Video call will proceed without audio.");
+            } catch (videoError) {
+              // Both audio and video failed
+              console.error("Video permission error:", videoError);
+              setPermissionsError("Camera and microphone access required for video calls.");
+              toast.error("Camera and microphone access required for video calls.");
+              setIsConnecting(false);
+              return;
+            }
+          }
+        }
         
         // Handle remote track reception
         peerConnectionRef.current.ontrack = (event) => {
@@ -70,9 +113,9 @@ export const VideoCall: React.FC<VideoCallProps> = ({ roomId, userName, onEndCal
         
       } catch (error) {
         console.error("Error initializing video call:", error);
-        toast.error("Could not access camera or microphone");
+        setPermissionsError("Could not initialize video call. Please try again.");
+        toast.error("Could not initialize video call");
         setIsConnecting(false);
-        onEndCall();
       }
     };
     
@@ -103,7 +146,7 @@ export const VideoCall: React.FC<VideoCallProps> = ({ roomId, userName, onEndCal
     // Using a timer to simulate connection success
     const timer = setTimeout(() => {
       if (!isConnected) {
-        toast.error("Could not connect to peer, trying to simulate peer connection");
+        toast.info("Could not connect to peer, waiting for someone to join");
         simulatePeerConnection();
       }
     }, 5000);
@@ -137,6 +180,11 @@ export const VideoCall: React.FC<VideoCallProps> = ({ roomId, userName, onEndCal
   const toggleMicrophone = () => {
     if (localStreamRef.current) {
       const audioTracks = localStreamRef.current.getAudioTracks();
+      if (audioTracks.length === 0) {
+        toast.error("No microphone available");
+        return;
+      }
+      
       audioTracks.forEach(track => {
         track.enabled = !track.enabled;
       });
@@ -174,9 +222,16 @@ export const VideoCall: React.FC<VideoCallProps> = ({ roomId, userName, onEndCal
         {isConnecting && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
             <div className="text-center">
-              <p className="text-xl mb-2">Connecting to {roomId}...</p>
+              <p className="text-xl mb-2">Connecting to call...</p>
               <p className="text-sm text-slate-300">Waiting for peer connection</p>
             </div>
+          </div>
+        )}
+        
+        {/* Permissions error message */}
+        {permissionsError && (
+          <div className="absolute top-4 left-0 right-0 mx-auto w-max bg-red-500/80 text-white px-4 py-2 rounded-md text-sm">
+            {permissionsError}
           </div>
         )}
         
@@ -206,6 +261,7 @@ export const VideoCall: React.FC<VideoCallProps> = ({ roomId, userName, onEndCal
           size="icon"
           onClick={toggleMicrophone}
           className={isMicMuted ? "bg-red-100 text-red-600" : ""}
+          disabled={localStreamRef.current?.getAudioTracks().length === 0}
         >
           {isMicMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
         </Button>

@@ -93,6 +93,11 @@ export const startVideoCall = async (senderId: string, receiverId: string): Prom
 
 export const joinVideoCall = async (roomId: string): Promise<boolean> => {
   try {
+    if (!navigator.mediaDevices || !window.RTCPeerConnection) {
+      console.error('WebRTC is not supported in this browser');
+      return false;
+    }
+    
     return true;
   } catch (error) {
     console.error('Error joining video call:', error);
