@@ -1,4 +1,3 @@
-
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
 
@@ -31,7 +30,6 @@ export const sendMessage = async (
     let attachmentName = null;
     let attachmentType = null;
 
-    // If there's an attachment, upload it to Supabase Storage
     if (attachment) {
       const fileName = `${Date.now()}_${attachment.name}`;
       const { data, error } = await supabase.storage
@@ -73,10 +71,8 @@ export const sendMessage = async (
 
 export const startVideoCall = async (senderId: string, receiverId: string): Promise<string | null> => {
   try {
-    // Generate a unique room ID for the video call
     const roomId = `video_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     
-    // Send a special message to indicate a video call invitation
     const { error } = await supabase
       .from('messages')
       .insert({
@@ -84,7 +80,7 @@ export const startVideoCall = async (senderId: string, receiverId: string): Prom
         receiver_id: receiverId,
         content: 'Video call invitation',
         is_video_call: true,
-        attachment_url: roomId // Using attachment_url to store the room ID
+        attachment_url: roomId
       });
 
     if (error) throw error;
@@ -92,6 +88,15 @@ export const startVideoCall = async (senderId: string, receiverId: string): Prom
   } catch (error) {
     console.error('Error starting video call:', error);
     return null;
+  }
+};
+
+export const joinVideoCall = async (roomId: string): Promise<boolean> => {
+  try {
+    return true;
+  } catch (error) {
+    console.error('Error joining video call:', error);
+    return false;
   }
 };
 
@@ -166,7 +171,6 @@ export const subscribeToMessages = (
   errorCallback?: (error: any) => void
 ) => {
   try {
-    // Enable realtime subscription for the messages table
     const channel = supabase
       .channel('messages-changes')
       .on('postgres_changes', 
@@ -190,7 +194,6 @@ export const subscribeToMessages = (
         }
       });
       
-    // Return unsubscribe function
     return () => {
       console.log('Unsubscribing from messages channel');
       supabase.removeChannel(channel);

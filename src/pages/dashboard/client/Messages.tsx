@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -19,9 +18,11 @@ import {
   markMessagesAsRead, 
   subscribeToMessages,
   getUserFullName,
-  startVideoCall
+  startVideoCall,
+  joinVideoCall
 } from '@/services/realTimeMessages';
 import { toast } from 'sonner';
+import VideoCall from '@/components/VideoCall';
 
 type Contact = {
   id: string;
@@ -288,6 +289,17 @@ const MessagesPage = () => {
     } catch (error) {
       console.error('Error starting video call:', error);
       toast.error('Failed to start video call');
+    }
+  };
+
+  const handleJoinVideoCall = async (roomId: string) => {
+    try {
+      await joinVideoCall(roomId);
+      setVideoCallRoom(roomId);
+      setIsVideoCallActive(true);
+    } catch (error) {
+      console.error('Error joining video call:', error);
+      toast.error('Failed to join video call');
     }
   };
 
@@ -628,26 +640,17 @@ const MessagesPage = () => {
           <DialogHeader>
             <DialogTitle>Video Call {activeContact && `with ${activeContact.name}`}</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col h-full">
-            <div className="flex-1 relative bg-muted rounded-md overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-full bg-black/50 flex items-center justify-center text-white">
-                {videoCallRoom ? (
-                  <div className="text-center">
-                    <p>Video call room: {videoCallRoom}</p>
-                    <p className="text-sm text-muted">Connecting...</p>
-                  </div>
-                ) : (
-                  <p>Video connection not available</p>
-                )}
-              </div>
-              <div className="absolute bottom-5 right-5 w-1/4 h-1/4 bg-accent rounded-md border"></div>
+          {videoCallRoom ? (
+            <VideoCall 
+              roomId={videoCallRoom} 
+              userName={currentUser?.email || 'User'}
+              onEndCall={handleEndVideoCall}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p>Video call connection failed. Please try again.</p>
             </div>
-            <div className="mt-4 flex justify-center">
-              <Button variant="destructive" onClick={handleEndVideoCall}>
-                End Call
-              </Button>
-            </div>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </DashboardLayout>
