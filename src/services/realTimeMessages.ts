@@ -143,14 +143,12 @@ export const getConversation = async (userId: string, otherUserId: string): Prom
       .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
       .order('created_at', { ascending: true });
 
-    if (error) throw error;
-    
+    if (error) throw new Error(`Supabase error: ${error.message}`);
     await markMessagesAsRead(otherUserId, userId);
-
     return data || [];
   } catch (error) {
     console.error('Error getting conversation:', error);
-    return [];
+    throw error; // Optionally rethrow to handle in UI
   }
 };
 

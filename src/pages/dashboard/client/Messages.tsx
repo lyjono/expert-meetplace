@@ -128,6 +128,7 @@ const MessagesPage = () => {
     fetchContacts();
   }, [currentUser]);
 
+  
   useEffect(() => {
     if (!currentUser) return;
     
