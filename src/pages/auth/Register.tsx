@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { MainLayout } from "@/components/layout/main-layout";
@@ -9,9 +8,25 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, AtSign, Lock, User, Check } from "lucide-react";
+import { ArrowRight, AtSign, Lock, User, Check, MapPin, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+
+// Static data imports
+import countriesData from "../../data/countries.json";
+import citiesData from "../../data/cities.json";
+
+const countryCodes = [
+  { code: "+1", country: "United States" },
+  { code: "+44", country: "United Kingdom" },
+  { code: "+33", country: "France" },
+  { code: "+49", country: "Germany" },
+  { code: "+81", country: "Japan" },
+  { code: "+86", country: "China" },
+  { code: "+91", country: "India" },
+  { code: "+55", country: "Brazil" },
+  { code: "+61", country: "Australia" },
+];
 
 const Register = () => {
   const navigate = useNavigate();
@@ -21,18 +36,47 @@ const Register = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [country, setCountry] = useState(""); // ISO2 code, e.g., "US"
+  const [city, setCity] = useState("");
+  const [citySearch, setCitySearch] = useState(""); // For searchable input
+  const [citySuggestions, setCitySuggestions] = useState([]);
+  const [address, setAddress] = useState("");
+  const [state, setState] = useState("");
+  const [zip, setZip] = useState("");
+  const [phoneCode, setPhoneCode] = useState("+1");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [category, setCategory] = useState("");
   const [specialty, setSpecialty] = useState("");
   const [experience, setExperience] = useState("");
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
 
-  const handleRegister = async (e: React.FormEvent) => {
+  // Filter cities based on country and search input
+  const handleCitySearch = (input) => {
+    setCitySearch(input);
+    if (input.length < 2 || !country) {
+      setCitySuggestions([]);
+      return;
+    }
+    const filteredCities = citiesData
+      .filter((c) => c.country_code === country && c.name.toLowerCase().includes(input.toLowerCase()))
+      .slice(0, 10); // Limit to 10 suggestions for performance
+    setCitySuggestions(filteredCities);
+  };
+
+  // Handle city selection from suggestions
+  const handleCitySelect = (selectedCity) => {
+    setCity(selectedCity.name);
+    setCitySearch(selectedCity.name);
+    setCitySuggestions([]);
+  };
+
+  const handleRegister = async (e) => {
     e.preventDefault();
     setLoading(true);
+    const phone = `${phoneCode}${phoneNumber}`;
 
     try {
-      // Register with Supabase auth
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -45,69 +89,53 @@ const Register = () => {
       });
 
       if (error) throw error;
-      
-      if (!data.user || !data.user.id) {
-        throw new Error("User creation failed - no user ID returned");
-      }
-      
+      if (!data.user || !data.user.id) throw new Error("User creation failed - no user ID returned");
+
       console.log("User created successfully with ID:", data.user.id);
-      
-      // Store the user type in localStorage
       localStorage.setItem("userType", userType);
 
-      // We need to wait for the user to be properly created before inserting profile data
-      // Adding a longer delay to ensure auth data is properly propagated
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      try {
-        if (userType === "provider") {
-          console.log("Creating provider profile for user:", data.user.id);
-          // Store additional provider data if registering as a provider
-          const { error: profileError } = await supabase
-            .from('provider_profiles')
-            .insert({
-              user_id: data.user.id,
-              name,
-              email,
-              category,
-              specialty,
-              years_experience: parseInt(experience) || 0,
-            });
+      if (userType === "provider") {
+        const { error: profileError } = await supabase
+          .from('provider_profiles')
+          .insert({
+            user_id: data.user.id,
+            name,
+            email,
+            category,
+            specialty,
+            years_experience: parseInt(experience) || 0,
+            address,
+            city,
+            state,
+            zip,
+            phone,
+            country,
+          });
 
-          if (profileError) {
-            console.error("Provider profile creation error:", profileError);
-            toast.error(`Provider profile creation failed: ${profileError.message}`);
-            setLoading(false);
-            return;
-          }
-        } else {
-          // Store basic client info
-          console.log("Creating client profile for user:", data.user.id);
-          const { error: clientError } = await supabase
-            .from('client_profiles')
-            .insert({
-              user_id: data.user.id,
-              name,
-              email,
-            });
+        if (profileError) throw profileError;
+      } else {
+        const { error: clientError } = await supabase
+          .from('client_profiles')
+          .insert({
+            user_id: data.user.id,
+            name,
+            email,
+            address,
+            city,
+            state,
+            zip,
+            phone,
+            country,
+          });
 
-          if (clientError) {
-            console.error("Client profile error:", clientError);
-            toast.error(`Profile creation failed: ${clientError.message || "Unknown error"}`);
-            setLoading(false);
-            return;
-          }
-        }
-        
-        toast.success("Registration successful! Please check your email for verification.");
-        
-        // Redirect to login
-        navigate("/login");
-      } catch (profileError: any) {
-        console.error("Profile creation error:", profileError);
-        toast.error(`Profile creation failed: ${profileError.message || "Unknown error"}`);
+        if (clientError) throw clientError;
       }
-    } catch (error: any) {
+
+      toast.success("Registration successful! Please check your email for verification.");
+      navigate("/login");
+    } catch (error) {
       console.error("Registration error:", error);
       toast.error(error.message || "Registration failed. Please try again.");
     } finally {
@@ -115,7 +143,7 @@ const Register = () => {
     }
   };
 
-  const nextStep = (e: React.FormEvent) => {
+  const nextStep = (e) => {
     e.preventDefault();
     setStep(2);
   };
@@ -130,7 +158,7 @@ const Register = () => {
           </p>
         </div>
         <div className="glass-card rounded-xl p-6 lg:p-8 shadow-lg">
-          <Tabs defaultValue={userType} className="w-full" onValueChange={(value) => setUserType(value as "user" | "provider")}>
+          <Tabs defaultValue={userType} className="w-full" onValueChange={(value) => setUserType(value)}>
             <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="user">Client Account</TabsTrigger>
               <TabsTrigger value="provider">Service Provider</TabsTrigger>
@@ -159,8 +187,6 @@ const Register = () => {
                       id="email"
                       placeholder="name@example.com"
                       type="email"
-                      autoCapitalize="none"
-                      autoCorrect="off"
                       className="pl-10"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
@@ -184,6 +210,110 @@ const Register = () => {
                   <p className="text-xs text-muted-foreground">
                     Password must be at least 8 characters long
                   </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="country">Country</Label>
+                  <Select value={country} onValueChange={setCountry} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a country" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {countriesData.map((c) => (
+                        <SelectItem key={c.iso2} value={c.iso2}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="city">City</Label>
+                  <div className="relative">
+                    <Input
+                      id="city"
+                      placeholder="Type your city..."
+                      value={citySearch}
+                      onChange={(e) => handleCitySearch(e.target.value)}
+                      required
+                    />
+                    {citySuggestions.length > 0 && (
+                      <ul className="absolute z-10 w-full bg-white border rounded-md shadow-lg max-h-40 overflow-auto mt-1">
+                        {citySuggestions.map((c) => (
+                          <li
+                            key={c.id}
+                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                            onClick={() => handleCitySelect(c)}
+                          >
+                            {c.name}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="address">Address</Label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="address"
+                      placeholder="Enter your street address"
+                      className="pl-10"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="state">State/Province</Label>
+                    <Input
+                      id="state"
+                      placeholder="State"
+                      value={state}
+                      onChange={(e) => setState(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="zip">ZIP/Postal Code</Label>
+                    <Input
+                      id="zip"
+                      placeholder="ZIP"
+                      value={zip}
+                      onChange={(e) => setZip(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone</Label>
+                  <div className="flex gap-2">
+                    <Select value={phoneCode} onValueChange={setPhoneCode} required>
+                      <SelectTrigger className="w-[100px]">
+                        <SelectValue placeholder="Code" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {countryCodes.map(({ code, country }) => (
+                          <SelectItem key={code} value={code}>
+                            {code} ({country})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="relative flex-1">
+                      <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="phone"
+                        placeholder="123-456-7890"
+                        className="pl-10"
+                        value={phoneNumber}
+                        onChange={(e) => setPhoneNumber(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox id="terms" required />
@@ -229,8 +359,6 @@ const Register = () => {
                         id="provider-email"
                         placeholder="name@example.com"
                         type="email"
-                        autoCapitalize="none"
-                        autoCorrect="off"
                         className="pl-10"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -300,6 +428,110 @@ const Register = () => {
                       required
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="country">Country</Label>
+                    <Select value={country} onValueChange={setCountry} required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a country" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {countriesData.map((c) => (
+                          <SelectItem key={c.iso2} value={c.iso2}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="city">City</Label>
+                    <div className="relative">
+                      <Input
+                        id="city"
+                        placeholder="Type your city..."
+                        value={citySearch}
+                        onChange={(e) => handleCitySearch(e.target.value)}
+                        required
+                      />
+                      {citySuggestions.length > 0 && (
+                        <ul className="absolute z-10 w-full bg-white border rounded-md shadow-lg max-h-40 overflow-auto mt-1">
+                          {citySuggestions.map((c) => (
+                            <li
+                              key={c.id}
+                              className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                              onClick={() => handleCitySelect(c)}
+                            >
+                              {c.name}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="address">Address</Label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="address"
+                        placeholder="Enter your street address"
+                        className="pl-10"
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="state">State/Province</Label>
+                      <Input
+                        id="state"
+                        placeholder="State"
+                        value={state}
+                        onChange={(e) => setState(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="zip">ZIP/Postal Code</Label>
+                      <Input
+                        id="zip"
+                        placeholder="ZIP"
+                        value={zip}
+                        onChange={(e) => setZip(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Phone</Label>
+                    <div className="flex gap-2">
+                      <Select value={phoneCode} onValueChange={setPhoneCode} required>
+                        <SelectTrigger className="w-[100px]">
+                          <SelectValue placeholder="Code" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {countryCodes.map(({ code, country }) => (
+                            <SelectItem key={code} value={code}>
+                              {code} ({country})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="relative flex-1">
+                        <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          id="phone"
+                          placeholder="123-456-7890"
+                          className="pl-10"
+                          value={phoneNumber}
+                          onChange={(e) => setPhoneNumber(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
                   <div className="flex items-center space-x-2">
                     <Checkbox id="provider-terms" required />
                     <Label htmlFor="provider-terms" className="text-sm font-normal">
@@ -345,13 +577,13 @@ const Register = () => {
             <div className="mt-4 grid grid-cols-2 gap-2">
               <Button variant="outline" className="w-full">
                 <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M20.283 10.356h-8.327v3.451h4.792c-.446 2.193-2.313 3.453-4.792 3.453a5.27 5.27 0 0 1-5.279-5.28 5.27 5.27 0 0 1 5.279-5.279c1.259 0 2.397.447 3.29 1.178l2.6-2.599c-1.584-1.381-3.615-2.233-5.89-2.233a8.908 8.908 0 0 0-8.934 8.934 8.907 8.907 0 0 0 8.934 8.934c4.467 0 8.529-3.249 8.529-8.934 0-.528-.081-1.097-.202-1.625z"></path>
+                  <path d="M20.283 10.356h-8.327v3.451h4.792c-.446 2.193-2.313 3.453-4.792 3.453a5.27 5.27 0 0 1-5.279-5.28 5.27 5.27 0 0 1 5.279-5.279c1.259 0 2.397.447 3.29 1.178l2.6-2.599c-1.584-1.381-3.615-2.233-5.89-2.233a8.908 8.908 0 0 0-8.934 8.934 8.907 8.907 0 0 0 8.934 8.934c4.467 0 8.529-3.249 8.529-8.934 0-.528-.081-1.097-.202-1.625z" />
                 </svg>
                 Google
               </Button>
               <Button variant="outline" className="w-full">
                 <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="M6.29 18.251c7.547 0 11.675-6.253 11.675-11.675 0-.178 0-.355-.012-.53A8.348 8.348 0 0 0 20 3.92a8.19 8.19 0 0 1-2.357.646 4.118 4.118 0 0 0 1.804-2.27 8.224 8.224 0 0 1-2.605.996 4.107 4.107 0 0 0-6.993 3.743 11.65 11.65 0 0 1-8.457-4.287 4.106 4.106 0 0 0 1.27 5.477A4.073 4.073 0 0 1 .8 7.713v.052a4.105 4.105 0 0 0 3.292 4.022 4.095 4.095 0 0 1-1.853.07 4.108 4.108 0 0 0 3.834 2.85A8.233 8.233 0 0 1 0 16.407a11.615 11.615 0 0 0 6.29 1.84"></path>
+                  <path d="M6.29 18.251c7.547 0 11.675-6.253 11.675-11.675 0-.178 0-.355-.012-.53A8.348 8.348 0 0 0 20 3.92a8.19 8.19 0 0 1-2.357.646 4.118 4.118 0 0 0 1.804-2.27 8.224 8.224 0 0 1-2.605.996 4.107 4.107 0 0 0-6.993 3.743 11.65 11.65 0 0 1-8.457-4.287 4.106 4.106 0 0 0 1.27 5.477A4.073 4.073 0 0 1 .8 7.713v.052a4.105 4.105 0 0 0 3.292 4.022 4.095 4.095 0 0 1-1.853.07 4.108 4.108 0 0 0 3.834 2.85A8.233 8.233 0 0 1 0 16.407a11.615 11.615 0 0 0 6.29 1.84" />
                 </svg>
                 Twitter
               </Button>
