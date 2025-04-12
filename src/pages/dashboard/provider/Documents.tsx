@@ -40,6 +40,7 @@
               getSharedDocuments, // <-- Import this function
               uploadDocument,
               shareDocument,
+              getChatDocuments,
               deleteDocument,
               getUserProfiles,
           } from '@/services/documents'; // Adjust path as needed
@@ -75,6 +76,8 @@
             const [myDocs, setMyDocs] = useState<Document[]>([]);
             const [sharedByMeDocs, setSharedByMeDocs] = useState<Document[]>([]);
             const [sharedWithMeDocs, setSharedWithMeDocs] = useState<Document[]>([]); // <-- New state
+            const [chatDocs, setChatDocs] = useState<Document[]>([]);
+            const [isLoadingChatDocs, setIsLoadingChatDocs] = useState(true);
             const [isLoadingMyDocs, setIsLoadingMyDocs] = useState(true);
             const [isLoadingSharedByMe, setIsLoadingSharedByMe] = useState(true); // Renamed for clarity
             const [isLoadingSharedWithMe, setIsLoadingSharedWithMe] = useState(true); // <-- New loading state
@@ -89,46 +92,73 @@
             const fetchData = useCallback(async () => {
               setIsLoadingMyDocs(true);
               setIsLoadingSharedByMe(true);
-              setIsLoadingSharedWithMe(true); // Set loading true for the new tab
-              setIsLoadingProfiles(true); // Start loading profiles
+              setIsLoadingSharedWithMe(true);
+              setIsLoadingChatDocs(true);
+              setIsLoadingProfiles(true);
 
-              const user = await getCurrentUser();
-              setCurrentUserId(user?.id ?? null);
+              try {
+                const user = await getCurrentUser();
+                setCurrentUserId(user?.id ?? null);
 
-              const [myDocsResult, sharedByMeResult, sharedWithMeResult] = await Promise.all([
-                getDocuments(),
-                getDocumentsSharedByMe(),
-                getSharedDocuments(), // <-- Fetch documents shared with the provider
-              ]);
+                let myDocsResult, sharedByMeResult, sharedWithMeResult, chatDocsResult;
+                try {
+                  [myDocsResult, sharedByMeResult, sharedWithMeResult, chatDocsResult] = await Promise.all([
+                    getDocuments(),
+                    getDocumentsSharedByMe(),
+                    getSharedDocuments(),
+                    getChatDocuments(),
+                  ]);
+                } catch (fetchError) {
+                  console.error('Error during Promise.all:', fetchError);
+                  throw fetchError;
+                }
 
-              setMyDocs(myDocsResult);
-              setSharedByMeDocs(sharedByMeResult);
-              setSharedWithMeDocs(sharedWithMeResult); // <-- Set the new state
+                console.log('Chat Docs Result:', chatDocsResult); // Debug log
 
-              setIsLoadingMyDocs(false);
-              setIsLoadingSharedByMe(false);
-              setIsLoadingSharedWithMe(false); // Set loading false
+                setMyDocs(myDocsResult || []);
+                setSharedByMeDocs(sharedByMeResult || []);
+                setSharedWithMeDocs(sharedWithMeResult || []);
+                setChatDocs(chatDocsResult || []);
 
-              // --- Fetch profiles for ALL relevant users ---
-              const allUserIds = new Set<string>();
-              // Users shared *with* in "Shared by Me" tab
-              sharedByMeResult.forEach(doc => {
+                setIsLoadingMyDocs(false);
+                setIsLoadingSharedByMe(false);
+                setIsLoadingSharedWithMe(false);
+                setIsLoadingChatDocs(false);
+
+                const allUserIds = new Set<string>();
+                sharedByMeResult.forEach(doc => {
                   doc.shared_with?.forEach(id => allUserIds.add(id));
-              });
-              // Users who *own/shared* documents in "Shared With Me" tab
-              sharedWithMeResult.forEach(doc => {
-                  if (doc.user_id) {
-                      allUserIds.add(doc.user_id);
-                  }
-              });
+                });
+                sharedWithMeResult.forEach(doc => {
+                  if (doc.user_id) allUserIds.add(doc.user_id);
+                });
+                chatDocsResult.forEach(doc => {
+                  const senderId = doc.sender_id || doc.user_id;
+                  if (senderId) allUserIds.add(senderId);
+                });
 
-              if (allUserIds.size > 0) {
+                console.log('All User IDs for Profiles:', Array.from(allUserIds)); // Debug log
+
+                if (allUserIds.size > 0) {
                   const profiles = await getUserProfiles(Array.from(allUserIds));
-                  setUserProfiles(profiles);
+                  console.log('Fetched Profiles:', Array.from(profiles.entries())); // Debug log
+                  setUserProfiles(profiles || new Map());
+                }
+                setIsLoadingProfiles(false);
+              } catch (error) {
+                console.error('Error fetching data:', error);
+                toast({
+                  title: 'Error',
+                  description: 'Failed to load documents. Please try again.',
+                  variant: 'destructive',
+                });
+                setIsLoadingMyDocs(false);
+                setIsLoadingSharedByMe(false);
+                setIsLoadingSharedWithMe(false);
+                setIsLoadingChatDocs(false);
+                setIsLoadingProfiles(false);
               }
-              setIsLoadingProfiles(false);
-
-            }, []);
+            }, [toast]);
 
             useEffect(() => {
               fetchData();
@@ -212,6 +242,7 @@
 
             const filteredMyDocs = filterDocs(myDocs);
             const filteredSharedByMeDocs = filterDocs(sharedByMeDocs);
+            const filteredChatDocs = filterDocs(chatDocs);
             const filteredSharedWithMeDocs = filterDocs(sharedWithMeDocs); // <-- Filter the new list
 
 
@@ -231,7 +262,7 @@
                 <div className="grid gap-4">
                   <h1 className="text-3xl font-bold tracking-tight">Documents</h1>
                   <p className="text-muted-foreground">
-                    Manage documents you own and view documents shared with you.
+                    Manage documents you own, view documents shared with you, and access chat attachments.
                   </p>
                 </div>
 
@@ -258,12 +289,12 @@
                   </div>
                 </div>
 
-                {/* Tabs */}
                 <Tabs defaultValue="my-documents" className="mt-6">
                   <TabsList>
                     <TabsTrigger value="my-documents">My Documents</TabsTrigger>
                     <TabsTrigger value="shared-by-me">Shared by Me</TabsTrigger>
-                    <TabsTrigger value="shared-with-me">Shared With Me</TabsTrigger> {/* <-- New Tab Trigger */}
+                    <TabsTrigger value="shared-with-me">Shared With Me</TabsTrigger>
+                    <TabsTrigger value="chat-documents">Chat Documents</TabsTrigger>
                   </TabsList>
 
                   {/* My Documents Tab */}
@@ -278,7 +309,7 @@
                           {isLoadingMyDocs ? renderLoading() : filteredMyDocs.length > 0 ? (
                             <div className="space-y-2">
                               {filteredMyDocs.map((doc) => (
-                                <DocumentRow // Use the row for owned documents
+                                <DocumentRow
                                   key={doc.id}
                                   document={doc}
                                   onDelete={() => handleDelete(doc)}
@@ -289,7 +320,7 @@
                               ))}
                             </div>
                           ) : (
-                             renderEmpty("You haven't uploaded any documents yet.")
+                            renderEmpty("You haven't uploaded any documents yet.")
                           )}
                         </ScrollArea>
                       </CardContent>
@@ -297,7 +328,7 @@
                   </TabsContent>
 
                   {/* Shared By Me Tab */}
-                  <TabsContent value="shared-by-me" className="mt-4"> {/* Updated value */}
+                  <TabsContent value="shared-by-me" className="mt-4">
                     <Card>
                       <CardHeader className="pb-3">
                         <CardTitle className="text-base">Documents Shared by Me</CardTitle>
@@ -305,46 +336,77 @@
                       </CardHeader>
                       <CardContent>
                         <ScrollArea className="h-[400px] pr-4">
-                           {isLoadingSharedByMe ? renderLoading() : filteredSharedByMeDocs.length > 0 ? (
+                          {isLoadingSharedByMe ? renderLoading() : filteredSharedByMeDocs.length > 0 ? (
                             <div className="space-y-2">
                               {filteredSharedByMeDocs.map((doc) => (
-                                <SharedDocumentRow // Use the row showing who it's shared with
+                                <SharedDocumentRow
                                   key={doc.id}
                                   document={doc}
-                                  profiles={userProfiles} // Pass combined profiles
+                                  profiles={userProfiles}
                                   isLoadingProfiles={isLoadingProfiles}
-                                  onManageShare={() => handleShare(doc)} // Pass whole doc
+                                  onManageShare={() => handleShare(doc)}
                                   onDownload={() => handleDownload(doc.file_path, doc.name)}
-                                  onView={() => handleView(doc.file_path)} // Added view action
+                                  onView={() => handleView(doc.file_path)}
                                 />
                               ))}
                             </div>
                           ) : (
-                              renderEmpty("You haven't shared any of your documents yet.")
+                            renderEmpty("You haven't shared any of your documents yet.")
                           )}
                         </ScrollArea>
                       </CardContent>
                     </Card>
                   </TabsContent>
 
-                  {/* Shared With Me Tab (NEW) */}
+                  {/* Shared With Me Tab */}
                   <TabsContent value="shared-with-me" className="mt-4">
-                      <Card>
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-base">Documents Shared With Me</CardTitle>
-                          <CardDescription>Files shared with you by clients or others</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <ScrollArea className="h-[400px] pr-4">
-                             {isLoadingSharedWithMe ? renderLoading() : filteredSharedWithMeDocs.length > 0 ? (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Documents Shared With Me</CardTitle>
+                        <CardDescription>Files shared with you by clients or others</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-[400px] pr-4">
+                          {isLoadingSharedWithMe ? renderLoading() : filteredSharedWithMeDocs.length > 0 ? (
+                            <div className="space-y-2">
+                              {filteredSharedWithMeDocs.map((doc) => (
+                                <ReceivedDocumentRow
+                                  key={doc.id}
+                                  document={doc}
+                                  sharerProfile={userProfiles.get(doc.user_id)}
+                                  isLoadingProfiles={isLoadingProfiles}
+                                  onDownload={() => handleDownload(doc.file_path, doc.name)}
+                                  onView={() => handleView(doc.file_path)}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            renderEmpty("No documents have been shared with you yet.")
+                          )}
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  {/* Chat Documents Tab */}
+                  <TabsContent value="chat-documents" className="mt-4">
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Chat Documents</CardTitle>
+                        <CardDescription>Attachments shared in your chats</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-[400px] pr-4">
+                          {isLoadingChatDocs
+                            ? renderLoading()
+                            : filteredChatDocs.length > 0
+                            ? (
                               <div className="space-y-2">
-                                {filteredSharedWithMeDocs.map((doc) => (
-                                  // Reuse/Adapt ClientDocumentRow logic here
+                                {filteredChatDocs.map((doc) => (
                                   <ReceivedDocumentRow
                                     key={doc.id}
                                     document={doc}
-                                    // Pass the profile of the owner (doc.user_id)
-                                    sharerProfile={userProfiles.get(doc.user_id)}
+                                    sharerProfile={userProfiles.get(doc.sender_id || doc.user_id)}
                                     isLoadingProfiles={isLoadingProfiles}
                                     onDownload={() => handleDownload(doc.file_path, doc.name)}
                                     onView={() => handleView(doc.file_path)}
@@ -352,13 +414,12 @@
                                 ))}
                               </div>
                             ) : (
-                                renderEmpty("No documents have been shared with you yet.")
+                              renderEmpty("No chat attachments found.")
                             )}
-                          </ScrollArea>
-                        </CardContent>
-                      </Card>
-                   </TabsContent>
-
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
                 </Tabs>
               </DashboardLayout>
             );
@@ -469,56 +530,44 @@
             onDownload: () => void;
             onView: () => void;
           }
-          const ReceivedDocumentRow = ({ document, sharerProfile, isLoadingProfiles, onDownload, onView }: ReceivedDocumentRowProps) => {
-            const sharerName = sharerProfile?.full_name || 'Unknown User';
-            const sharerInitial = sharerName?.charAt(0)?.toUpperCase() || '?';
+const ReceivedDocumentRow = ({ document, sharerProfile, isLoadingProfiles, onDownload, onView }: ReceivedDocumentRowProps) => {
+  const sharerName = sharerProfile?.full_name || 'Unknown User';
+  const sharerInitial = sharerName.charAt(0).toUpperCase() || '?';
 
-            return (
-              <div className="flex items-center justify-between p-3 border rounded-md hover:bg-accent/50 transition-colors gap-2">
-                {/* File Info */}
-                <div className="flex items-center gap-3 flex-grow min-w-0">
-                  <div className="bg-primary/10 p-2 rounded flex-shrink-0">
-                     {getFileIcon(document.file_type)}
-                  </div>
-                  <div className="truncate">
-                    <h3 className="font-medium text-sm truncate">{document.name}</h3>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                      {/* Show Sharer Info */}
-                      {!isLoadingProfiles && sharerProfile && (
-                          <>
-                          <div className="flex items-center gap-1" title={`Shared by ${sharerName}`}>
-                              <Avatar className="h-4 w-4">
-                                  <AvatarImage src={sharerProfile.avatar_url || undefined} alt={sharerName} />
-                                  <AvatarFallback className="text-[8px]">{sharerInitial}</AvatarFallback>
-                              </Avatar>
-                              <span className="hidden sm:inline">{sharerName}</span> {/* Hide name on small screens */}
-                          </div>
-                          <span>•</span>
-                          </>
-                      )}
-                       {isLoadingProfiles && <Loader2 className="h-3 w-3 animate-spin"/>}
-                       {!isLoadingProfiles && !sharerProfile && <span>Shared by Unknown •</span>}
-                      {/* Date */}
-                      <span className="flex items-center">
-                        <Calendar className="mr-1 h-3 w-3" /> {formatDate(document.updated_at)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Actions (Limited for received documents) */}
-                <div className="flex items-center gap-1 flex-shrink-0">
-                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onView} title="View">
-                       <Eye className="h-4 w-4" />
-                   </Button>
-                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onDownload} title="Download">
-                       <Download className="h-4 w-4" />
-                   </Button>
-                   {/* No Delete or Share actions for documents not owned */}
-                </div>
-              </div>
-            );
-          };
+  return (
+    <div className="flex items-center justify-between p-3 border rounded-md hover:bg-accent/50 transition-colors gap-2">
+      <div className="flex items-center gap-3 flex-grow min-w-0">
+        <div className="bg-primary/10 p-2 rounded flex-shrink-0">
+          {getFileIcon(document.file_type)}
+        </div>
+        <div className="truncate">
+          <h3 className="font-medium text-sm truncate">{document.name}</h3>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+            <div className="flex items-center gap-1" title={`From Chat by ${sharerName}`}>
+              <Avatar className="h-4 w-4">
+                <AvatarImage src={sharerProfile?.avatar_url || undefined} alt={sharerName} />
+                <AvatarFallback className="text-[8px]">{sharerInitial}</AvatarFallback>
+              </Avatar>
+              <span className="hidden sm:inline">From Chat by {sharerName}</span>
+            </div>
+            <span>•</span>
+            <span className="flex items-center">
+              <Calendar className="mr-1 h-3 w-3" /> {formatDate(document.updated_at)}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onView} title="View">
+          <Eye className="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onDownload} title="Download">
+          <Download className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
 
 
           export default Documents;

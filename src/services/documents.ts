@@ -1,4 +1,4 @@
-// src/lib/documents.ts
+// src/services/documents.ts
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase'; // Ensure this path is correct for your project
 import { User } from '@supabase/supabase-js'; // Optional: For type safety with user object
@@ -15,6 +15,8 @@ export interface Document {
   created_at: string;   // Timestamp when the record was created
   updated_at: string;   // Timestamp when the record was last updated
   shared_with?: string[]; // Optional array of user UUIDs the document is shared with
+isChatDocument?: boolean; // Optional flag to identify chat documents
+  message_id?: string; // Optional: Store message ID for reference
 }
 
 /**
@@ -40,6 +42,53 @@ export const getDocuments = async (): Promise<Document[]> => {
     return []; // Return empty array on error
   }
 };
+
+
+/**
+ * Fetches documents shared via chat messages where the current user is either sender or receiver.
+ * @returns {Promise<Document[]>} A promise that resolves to an array of chat documents.
+ */
+export const getChatDocuments = async (): Promise<Document[]> => {
+  try {
+    const user = await getCurrentUser();
+    if (!user) throw new Error('User not authenticated');
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id, sender_id, receiver_id, attachment_url, attachment_name, attachment_type, created_at')
+      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+      .not('attachment_url', 'is', null)
+      .not('attachment_name', 'is', null)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const chatDocuments: Document[] = (data || []).map((message) => {
+      // Determine the sender ID (the other user in the conversation)
+      const senderId = message.sender_id === user.id ? message.receiver_id : message.sender_id;
+      return {
+        id: message.id,
+        user_id: senderId, // Use senderId to reflect the actual sender
+        name: message.attachment_name || 'Unnamed Attachment',
+        file_path: message.attachment_url,
+        file_type: message.attachment_type || 'application/octet-stream',
+        created_at: message.created_at || new Date().toISOString(),
+        updated_at: message.created_at || new Date().toISOString(),
+        shared_with: [message.sender_id, message.receiver_id],
+        isChatDocument: true,
+        message_id: message.id,
+        sender_id: senderId, // Explicitly include sender_id
+      };
+    });
+
+    return chatDocuments;
+  } catch (error) {
+    console.error('Error fetching chat documents:', error);
+    return [];
+  }
+};
+
+
 
 /**
  * Fetches all documents that have been shared with the currently authenticated user.
@@ -302,33 +351,75 @@ export interface UserProfile {
  * @returns {Promise<Map<string, UserProfile>>} A promise resolving to a Map where keys are user IDs and values are UserProfile objects.
  */
 export const getUserProfiles = async (userIds: string[]): Promise<Map<string, UserProfile>> => {
-    const profileMap = new Map<string, UserProfile>();
-    if (!userIds || userIds.length === 0) {
-      return profileMap; // Return empty map if no IDs provided
-    }
+  const profileMap = new Map<string, UserProfile>();
+  if (!userIds || userIds.length === 0) {
+    return profileMap; // Return empty map if no IDs provided
+  }
 
-    // Remove duplicates just in case
-    const uniqueUserIds = [...new Set(userIds)];
+  // Remove duplicates
+  const uniqueUserIds = [...new Set(userIds)];
 
-    try {
-      const { data, error } = await supabase
-        .from('profiles') // Replace 'profiles' with your actual profiles table name
-        .select('id, full_name, avatar_url') // Select desired profile fields
-        .in('id', uniqueUserIds); // Fetch profiles matching the IDs
+  try {
+    // Fetch from client_profiles
+    const { data: clientData, error: clientError } = await supabase
+      .from('client_profiles')
+      .select('user_id, name, avatar_url')
+      .in('user_id', uniqueUserIds);
 
-      if (error) throw error;
+    if (clientError) throw clientError;
 
-      // Populate the map for easy lookup
-      data?.forEach(profile => {
-        if (profile.id) { // Ensure profile and id exist
-            profileMap.set(profile.id, profile as UserProfile);
-        }
+    // Fetch from provider_profiles
+    const { data: providerData, error: providerError } = await supabase
+      .from('provider_profiles')
+      .select('user_id, name, image_url')
+      .in('user_id', uniqueUserIds);
+
+    if (providerError) throw providerError;
+
+    // Map client profiles
+    clientData?.forEach((profile) => {
+      if (profile.user_id) {
+        profileMap.set(profile.user_id, {
+          id: profile.user_id,
+          full_name: profile.name || `User ${profile.user_id.slice(0, 8)}`,
+          avatar_url: profile.avatar_url,
+        });
+      }
+    });
+
+    // Map provider profiles, overwriting client profiles if user_id exists in both (unlikely)
+    providerData?.forEach((profile) => {
+      if (profile.user_id) {
+        profileMap.set(profile.user_id, {
+          id: profile.user_id,
+          full_name: profile.name || `User ${profile.user_id.slice(0, 8)}`,
+          avatar_url: profile.image_url, // Map image_url to avatar_url
+        });
+      }
+    });
+
+    // Fallback for any user_ids not found in either table
+    uniqueUserIds.forEach((id) => {
+      if (!profileMap.has(id)) {
+        profileMap.set(id, {
+          id,
+          full_name: `Anonymous User`, // Changed for privacy
+          avatar_url: undefined,
+        });
+      }
+    });
+
+    return profileMap;
+  } catch (error) {
+    console.error('Error fetching user profiles:', error);
+    // Fallback to prevent UI crashes
+    uniqueUserIds.forEach((id) => {
+      profileMap.set(id, {
+        id,
+        full_name: `Anonymous User`,
+        avatar_url: undefined,
       });
-
-      return profileMap;
-
-    } catch (error) {
-      console.error('Error fetching user profiles:', error);
-      return profileMap; // Return empty map on error
-    }
-  };
+    });
+    return profileMap;
+  }
+};
