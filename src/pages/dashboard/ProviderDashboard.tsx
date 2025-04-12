@@ -1,28 +1,119 @@
-
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, MessageSquare, Users, FileText, TrendingUp, DollarSign, Clock } from "lucide-react";
+import { Calendar, MessageSquare, Users, FileText, DollarSign } from "lucide-react";
 import { Link } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 import { getLeadCounts } from "@/services/leads";
 
+// Fetch authenticated provider's details
+const getAuthenticatedProvider = async () => {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user) throw new Error("User not authenticated");
+
+  const { data, error } = await supabase
+    .from("provider_profiles")
+    .select("id, user_id, name")
+    .eq("user_id", authData.user.id)
+    .single();
+
+  if (error) throw error;
+  const { data: userTypeData, error: userTypeError } = await supabase
+    .from("users_view")
+    .select("user_type")
+    .eq("user_id", authData.user.id)
+    .single();
+  if (userTypeError) throw userTypeError;
+  if (userTypeData.user_type !== "provider") throw new Error("User is not a provider");
+
+  console.log('Authenticated Provider ID:', data.id); // Debug log
+  return { providerId: data.id, providerName: data.name };
+};
+
 const ProviderDashboard = () => {
-  const { data: leadCounts = { new: 0, contacted: 0, qualified: 0, converted: 0 }, isLoading: isLoadingLeads } = useQuery({
-    queryKey: ['leadCounts'],
-    queryFn: getLeadCounts,
+  // Query authenticated provider
+  const { data: providerData, isLoading: isLoadingProvider, error: providerError } = useQuery({
+    queryKey: ["authenticatedProvider"],
+    queryFn: getAuthenticatedProvider,
   });
 
+  const providerId = providerData?.providerId;
+
+  // Query for today's appointments with client names
+  const { data: appointments = [], isLoading: isLoadingAppointments } = useQuery({
+    queryKey: ["appointments", "today", providerId],
+    queryFn: async () => {
+      if (!providerId) return [];
+      const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+      const { data, error } = await supabase
+        .from("appointments")
+        .select("*, client:client_id (name)")
+        .eq("provider_id", providerId)
+        .eq("date", today)
+        .order("time", { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!providerId,
+  });
+
+  // Query for unread messages
+  const { data: unreadMessages = [], isLoading: isLoadingUnread } = useQuery({
+    queryKey: ["unreadMessages", providerId],
+    queryFn: async () => {
+      if (!providerId) return [];
+      const { data, error } = await supabase
+        .from("messages")
+        .select("id")
+        .eq("receiver_id", providerId)
+        .eq("read", false);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!providerId,
+  });
+  const unreadCount = unreadMessages.length;
+
+  // Query for lead counts using leads.ts
+  const { data: leadCounts = { new: 0, contacted: 0, qualified: 0, converted: 0 }, isLoading: isLoadingLeads } = useQuery({
+    queryKey: ["leadCounts", providerId],
+    queryFn: () => getLeadCounts(providerId),
+    enabled: !!providerId,
+  });
   const totalLeads = Object.values(leadCounts).reduce((sum, count) => sum + count, 0);
-  
+
+  // Calculate next appointment time
+  const now = new Date();
+  const currentTime = now.getHours() * 60 + now.getMinutes();
+  const upcomingAppointments = appointments.filter((appt) => {
+    const [hours, minutes] = appt.time.split(":").map(Number);
+    const apptTime = hours * 60 + minutes;
+    return apptTime > currentTime;
+  });
+  const nextAppointment = upcomingAppointments[0];
+  const timeUntilNext = nextAppointment ? calculateTimeUntil(nextAppointment.time) : null;
+
+  function calculateTimeUntil(time) {
+    const [hours, minutes] = time.split(":").map(Number);
+    const apptDate = new Date(now);
+    apptDate.setHours(hours, minutes, 0, 0);
+    const diff = apptDate - now;
+    return diff > 0 ? `${Math.floor(diff / 60000)} minutes` : "Now";
+  }
+
+  // Mock revenue (replace with real calculation if data available)
+  const revenue = 2450; // TODO: Calculate from completed appointments
+
+  if (isLoadingProvider) return <div>Loading provider data...</div>;
+  if (providerError) return <div>Error: {providerError.message}</div>;
+
   return (
     <DashboardLayout userType="provider">
       <div className="grid gap-4">
         <h1 className="text-3xl font-bold tracking-tight">Welcome to your Provider Dashboard</h1>
-        <p className="text-muted-foreground">
-          Here's an overview of your practice and upcoming appointments.
-        </p>
+        <p className="text-muted-foreground">Here's an overview of your practice and upcoming appointments.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mt-6">
@@ -32,9 +123,13 @@ const ProviderDashboard = () => {
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">3</div>
+            <div className="text-2xl font-bold">{isLoadingAppointments ? "..." : appointments.length}</div>
             <p className="text-xs text-muted-foreground">
-              Next appointment in 45 minutes
+              {isLoadingAppointments
+                ? "Loading..."
+                : nextAppointment
+                ? `Next appointment in ${timeUntilNext}`
+                : "No more appointments today"}
             </p>
           </CardContent>
         </Card>
@@ -56,9 +151,9 @@ const ProviderDashboard = () => {
             <MessageSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">6</div>
+            <div className="text-2xl font-bold">{isLoadingUnread ? "..." : unreadCount}</div>
             <p className="text-xs text-muted-foreground">
-              3 requiring urgent attention
+              {isLoadingUnread ? "Loading..." : unreadCount > 0 ? `${unreadCount} requiring attention` : "All messages read"}
             </p>
           </CardContent>
         </Card>
@@ -68,10 +163,8 @@ const ProviderDashboard = () => {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">$2,450</div>
-            <p className="text-xs text-muted-foreground">
-              +12% from last month
-            </p>
+            <div className="text-2xl font-bold">${revenue}</div>
+            <p className="text-xs text-muted-foreground">+12% from last month</p>
           </CardContent>
         </Card>
       </div>
@@ -80,40 +173,30 @@ const ProviderDashboard = () => {
         <Card className="md:col-span-2 lg:col-span-1">
           <CardHeader>
             <CardTitle>Upcoming Appointments</CardTitle>
-            <CardDescription>
-              Your schedule for today
-            </CardDescription>
+            <CardDescription>Your schedule for today</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between items-center p-3 bg-accent/50 rounded-md">
-              <div>
-                <div className="font-medium">Alex Johnson</div>
-                <div className="text-sm text-muted-foreground">Tax Consultation</div>
-              </div>
-              <div className="text-sm font-medium">10:30 AM</div>
-            </div>
-            <div className="flex justify-between items-center p-3 bg-accent/50 rounded-md">
-              <div>
-                <div className="font-medium">Sarah Williams</div>
-                <div className="text-sm text-muted-foreground">Financial Planning</div>
-              </div>
-              <div className="text-sm font-medium">1:15 PM</div>
-            </div>
-            <div className="flex justify-between items-center p-3 bg-accent/50 rounded-md">
-              <div>
-                <div className="font-medium">Michael Brown</div>
-                <div className="text-sm text-muted-foreground">Legal Advice</div>
-              </div>
-              <div className="text-sm font-medium">3:45 PM</div>
-            </div>
+            {isLoadingAppointments ? (
+              <p>Loading appointments...</p>
+            ) : appointments.length === 0 ? (
+              <p>No appointments today</p>
+            ) : (
+              appointments.slice(0, 3).map((appt) => (
+                <div key={appt.id} className="flex justify-between items-center p-3 bg-accent/50 rounded-md">
+                  <div>
+                    <div className="font-medium">{appt.client?.name || "Unknown Client"}</div>
+                    <div className="text-sm text-muted-foreground">{appt.service}</div>
+                  </div>
+                  <div className="text-sm font-medium">{appt.time}</div>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
         <Card className="md:col-span-1">
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>
-              Common tasks for providers
-            </CardDescription>
+            <CardDescription>Common tasks for providers</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -147,9 +230,7 @@ const ProviderDashboard = () => {
         <Card className="md:col-span-2">
           <CardHeader>
             <CardTitle>Performance Overview</CardTitle>
-            <CardDescription>
-              Your service metrics and client interactions
-            </CardDescription>
+            <CardDescription>Your service metrics and client interactions</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[200px] flex items-center justify-center bg-muted rounded-md">

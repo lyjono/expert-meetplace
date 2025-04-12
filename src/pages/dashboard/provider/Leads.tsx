@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
@@ -9,14 +8,49 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Lead, getLeadsByStatus, updateLeadStatus } from "@/services/leads";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
+
+// Fetch authenticated provider's details (same as ProviderDashboard)
+const getAuthenticatedProvider = async () => {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user) throw new Error("User not authenticated");
+
+  const { data, error } = await supabase
+    .from("provider_profiles")
+    .select("id, user_id, name")
+    .eq("user_id", authData.user.id)
+    .single();
+
+  if (error) throw error;
+  const { data: userTypeData, error: userTypeError } = await supabase
+    .from("users_view")
+    .select("user_type")
+    .eq("user_id", authData.user.id)
+    .single();
+  if (userTypeError) throw userTypeError;
+  if (userTypeData.user_type !== "provider") throw new Error("User is not a provider");
+
+  console.log('Authenticated Provider ID:', data.id);
+  return { providerId: data.id, providerName: data.name };
+};
 
 const Leads = () => {
   const [activeTab, setActiveTab] = useState("new");
   const queryClient = useQueryClient();
 
-  const { data: leads = [], isLoading } = useQuery({
-    queryKey: ['leads', activeTab],
-    queryFn: () => getLeadsByStatus(activeTab),
+  // Fetch providerId
+  const { data: providerData, isLoading: isLoadingProvider, error: providerError } = useQuery({
+    queryKey: ["authenticatedProvider"],
+    queryFn: getAuthenticatedProvider,
+  });
+
+  const providerId = providerData?.providerId;
+
+  // Fetch leads with providerId
+  const { data: leads = [], isLoading: isLoadingLeads } = useQuery({
+    queryKey: ['leads', activeTab, providerId],
+    queryFn: () => getLeadsByStatus(activeTab, providerId!),
+    enabled: !!providerId, // Wait for providerId to be available
   });
 
   const updateStatusMutation = useMutation({
@@ -24,7 +58,6 @@ const Leads = () => {
       updateLeadStatus(leadId, newStatus),
     onSuccess: () => {
       toast.success("Lead status updated successfully");
-      // Invalidate queries to refetch data
       queryClient.invalidateQueries({ queryKey: ['leads'] });
     },
     onError: () => {
@@ -35,6 +68,9 @@ const Leads = () => {
   const handleUpdateStatus = (leadId: string, newStatus: string) => {
     updateStatusMutation.mutate({ leadId, newStatus });
   };
+
+  if (isLoadingProvider) return <div>Loading provider data...</div>;
+  if (providerError) return <div>Error: {providerError.message}</div>;
 
   return (
     <DashboardLayout userType="provider">
@@ -57,7 +93,7 @@ const Leads = () => {
           <TabsTrigger value="converted">Converted</TabsTrigger>
         </TabsList>
         <TabsContent value="new" className="mt-4">
-          {isLoading ? (
+          {isLoadingLeads ? (
             <p>Loading leads...</p>
           ) : leads.length > 0 ? (
             <div className="grid gap-4">
@@ -77,9 +113,9 @@ const Leads = () => {
             </Card>
           )}
         </TabsContent>
-        
+
         <TabsContent value="contacted" className="mt-4">
-          {isLoading ? (
+          {isLoadingLeads ? (
             <p>Loading leads...</p>
           ) : leads.length > 0 ? (
             <div className="grid gap-4">
@@ -99,9 +135,9 @@ const Leads = () => {
             </Card>
           )}
         </TabsContent>
-        
+
         <TabsContent value="qualified" className="mt-4">
-          {isLoading ? (
+          {isLoadingLeads ? (
             <p>Loading leads...</p>
           ) : leads.length > 0 ? (
             <div className="grid gap-4">
@@ -121,9 +157,9 @@ const Leads = () => {
             </Card>
           )}
         </TabsContent>
-        
+
         <TabsContent value="converted" className="mt-4">
-          {isLoading ? (
+          {isLoadingLeads ? (
             <p>Loading leads...</p>
           ) : leads.length > 0 ? (
             <div className="grid gap-4">
@@ -148,6 +184,7 @@ const Leads = () => {
   );
 };
 
+// LeadCard component remains unchanged
 interface LeadCardProps {
   lead: Lead;
   onUpdateStatus: (leadId: string, newStatus: string) => void;

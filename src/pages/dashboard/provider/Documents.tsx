@@ -1,476 +1,524 @@
+          // src/pages/dashboard/provider/Documents.tsx
+          import React, { useState, useEffect, useCallback, useRef } from "react";
+          import { DashboardLayout } from "@/components/layout/dashboard-layout";
+          import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+          import { Button } from "@/components/ui/button";
+          import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+          import { Input } from "@/components/ui/input";
+          // Removed unused Badge import
+          import {
+            FileText,
+            // Folder, // Can remove if not using folders
+            Upload,
+            Download,
+            Search,
+            Eye,
+            Share2,
+            Trash2,
+            File, // Keep File for icon helper
+            Users,
+            MoreVertical,
+            Loader2,
+            Calendar, // Added for ClientDocumentRow adaptation
+          } from "lucide-react";
+          import {
+            DropdownMenu,
+            DropdownMenuContent,
+            DropdownMenuItem,
+            DropdownMenuTrigger,
+          } from "@/components/ui/dropdown-menu";
+          import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+          import { ScrollArea } from "@/components/ui/scroll-area";
+          import { useToast } from "@/components/ui/use-toast";
+          import { formatDistanceToNow } from 'date-fns';
 
-import React, { useState } from "react";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import {
-  FileText,
-  Folder,
-  Upload,
-  Download,
-  Search,
-  Eye,
-  Share2,
-  Trash2,
-  File,
-  Users,
-} from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
+          // Import your Supabase helper functions and interfaces
+          import {
+              Document, // Use existing Document interface
+              getDocuments,
+              getDocumentsSharedByMe,
+              getSharedDocuments, // <-- Import this function
+              uploadDocument,
+              shareDocument,
+              deleteDocument,
+              getUserProfiles,
+          } from '@/services/documents'; // Adjust path as needed
+          import { getCurrentUser } from "@/lib/supabase"; // Added import
 
-const Documents = () => {
-  return (
-    <DashboardLayout userType="provider">
-      <div className="grid gap-4">
-        <h1 className="text-3xl font-bold tracking-tight">Documents</h1>
-        <p className="text-muted-foreground">
-          Manage your documents and share files with clients.
-        </p>
-      </div>
+          // Define Profile Map type
+          type ProfileMap = Awaited<ReturnType<typeof getUserProfiles>>;
 
-      <div className="flex justify-between flex-wrap gap-4 mt-6">
-        <div className="relative w-full max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search documents..."
-            className="pl-8 w-full"
-          />
-        </div>
-        <div className="flex gap-2">
-          <Button>
-            <Upload className="mr-2 h-4 w-4" />
-            Upload
-          </Button>
-          <Button variant="outline">
-            <Folder className="mr-2 h-4 w-4" />
-            New Folder
-          </Button>
-        </div>
-      </div>
+          // --- Reusable Helper Functions (getFileIcon, formatDate - ensure they exist or copy from previous versions) ---
+          const getFileIcon = (fileType: string): React.ReactNode => {
+              if (!fileType) return <File className="h-5 w-5" />; // Handle null/undefined type
+              if (fileType.includes('pdf')) return <FileText className="h-5 w-5" />;
+              if (fileType.includes('word') || fileType.includes('doc')) return <File className="h-5 w-5 text-blue-600" />;
+              if (fileType.includes('excel') || fileType.includes('sheet')) return <File className="h-5 w-5 text-green-600" />;
+              if (fileType.includes('presentation') || fileType.includes('ppt')) return <File className="h-5 w-5 text-orange-600" />;
+              if (fileType.includes('zip') || fileType.includes('archive')) return <File className="h-5 w-5 text-yellow-600" />;
+              if (fileType.includes('image')) return <File className="h-5 w-5 text-purple-600" />;
+              return <File className="h-5 w-5" />;
+          };
 
-      <Tabs defaultValue="my-documents" className="mt-6">
-        <TabsList>
-          <TabsTrigger value="my-documents">My Documents</TabsTrigger>
-          <TabsTrigger value="shared-with-clients">
-            Shared with Clients
-          </TabsTrigger>
-          <TabsTrigger value="templates">Templates</TabsTrigger>
-        </TabsList>
-        <TabsContent value="my-documents" className="mt-4">
-          <div className="grid gap-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Recent Files</CardTitle>
-                <CardDescription>
-                  Access files you've recently worked on
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-[300px]">
-                  <div className="space-y-2">
-                    {myDocuments.map((doc) => (
-                      <DocumentRow key={doc.id} document={doc} />
-                    ))}
+          const formatDate = (dateString: string | null | undefined): string => {
+              if (!dateString) return 'Unknown date';
+              try {
+                  return formatDistanceToNow(new Date(dateString), { addSuffix: true });
+              } catch (e) {
+                  return 'Invalid date';
+              }
+          };
+          // --- End Helper Functions ---
+
+          const Documents = () => {
+            const { toast } = useToast();
+            const [myDocs, setMyDocs] = useState<Document[]>([]);
+            const [sharedByMeDocs, setSharedByMeDocs] = useState<Document[]>([]);
+            const [sharedWithMeDocs, setSharedWithMeDocs] = useState<Document[]>([]); // <-- New state
+            const [isLoadingMyDocs, setIsLoadingMyDocs] = useState(true);
+            const [isLoadingSharedByMe, setIsLoadingSharedByMe] = useState(true); // Renamed for clarity
+            const [isLoadingSharedWithMe, setIsLoadingSharedWithMe] = useState(true); // <-- New loading state
+            const [searchTerm, setSearchTerm] = useState('');
+            const fileInputRef = useRef<HTMLInputElement>(null);
+            const [currentUserId, setCurrentUserId] = useState<string | null>(null); // <-- State for current user ID
+
+            // Combined state for profiles for simplicity, keys are user IDs
+            const [userProfiles, setUserProfiles] = useState<ProfileMap>(new Map());
+            const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
+
+            const fetchData = useCallback(async () => {
+              setIsLoadingMyDocs(true);
+              setIsLoadingSharedByMe(true);
+              setIsLoadingSharedWithMe(true); // Set loading true for the new tab
+              setIsLoadingProfiles(true); // Start loading profiles
+
+              const user = await getCurrentUser();
+              setCurrentUserId(user?.id ?? null);
+
+              const [myDocsResult, sharedByMeResult, sharedWithMeResult] = await Promise.all([
+                getDocuments(),
+                getDocumentsSharedByMe(),
+                getSharedDocuments(), // <-- Fetch documents shared with the provider
+              ]);
+
+              setMyDocs(myDocsResult);
+              setSharedByMeDocs(sharedByMeResult);
+              setSharedWithMeDocs(sharedWithMeResult); // <-- Set the new state
+
+              setIsLoadingMyDocs(false);
+              setIsLoadingSharedByMe(false);
+              setIsLoadingSharedWithMe(false); // Set loading false
+
+              // --- Fetch profiles for ALL relevant users ---
+              const allUserIds = new Set<string>();
+              // Users shared *with* in "Shared by Me" tab
+              sharedByMeResult.forEach(doc => {
+                  doc.shared_with?.forEach(id => allUserIds.add(id));
+              });
+              // Users who *own/shared* documents in "Shared With Me" tab
+              sharedWithMeResult.forEach(doc => {
+                  if (doc.user_id) {
+                      allUserIds.add(doc.user_id);
+                  }
+              });
+
+              if (allUserIds.size > 0) {
+                  const profiles = await getUserProfiles(Array.from(allUserIds));
+                  setUserProfiles(profiles);
+              }
+              setIsLoadingProfiles(false);
+
+            }, []);
+
+            useEffect(() => {
+              fetchData();
+            }, [fetchData]);
+
+            // --- Action Handlers (handleUploadClick, handleFileSelected, handleDelete, handleShare, handleDownload, handleView) ---
+            // Keep these largely the same as before.
+            // Ensure handleDelete checks ownership (currentUserId === doc.user_id)
+            // Ensure handleShare checks ownership if called from My Docs / Shared By Me
+            const handleUploadClick = () => { fileInputRef.current?.click(); };
+
+            const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              if(fileInputRef.current) { fileInputRef.current.value = ""; } // Reset input
+
+              const success = await uploadDocument(file);
+              if (success) {
+                toast({ title: "Success", description: `${file.name} uploaded successfully.` });
+                fetchData();
+              } else {
+                toast({ title: "Error", description: `Failed to upload ${file.name}.`, variant: "destructive" });
+              }
+            };
+
+            const handleDelete = async (doc: Document) => { // Pass the whole doc
+               if (doc.user_id !== currentUserId) {
+                   toast({ title: "Permission Denied", description: "You can only delete documents you own.", variant: "destructive" });
+                   return;
+               }
+              if (!window.confirm(`Are you sure you want to delete "${doc.name}"? This cannot be undone.`)) {
+                  return;
+              }
+              const success = await deleteDocument(doc.id);
+              if (success) {
+                toast({ title: "Success", description: `${doc.name} deleted.` });
+                fetchData();
+              } else {
+                toast({ title: "Error", description: `Failed to delete ${doc.name}.`, variant: "destructive" });
+              }
+            };
+
+            const handleShare = async (doc: Document) => { // Pass the whole doc
+                if (doc.user_id !== currentUserId) {
+                   toast({ title: "Permission Denied", description: "You can only manage sharing for documents you own.", variant: "destructive" });
+                   return;
+               }
+              // Placeholder for Sharing UI
+              const userIdsToShareWith = prompt(`Enter comma-separated user IDs to share/update sharing for "${doc.name}":\nCurrently shared with: ${doc.shared_with?.join(', ') || 'nobody'}`);
+              if (userIdsToShareWith !== null) { // Check for cancel
+                const ids = userIdsToShareWith.split(',').map(id => id.trim()).filter(id => id);
+                // Note: shareDocument currently only *adds* users. You might need an 'updateSharing' function
+                // that replaces the `shared_with` array entirely for a real "manage" feature.
+                // For now, we'll use the existing add logic.
+                const success = await shareDocument(doc.id, ids);
+                if (success) {
+                  toast({ title: "Success", description: `Sharing updated for ${doc.name}.` });
+                  fetchData();
+                } else {
+                  toast({ title: "Error", description: `Failed to update sharing for ${doc.name}.`, variant: "destructive" });
+                }
+              }
+            };
+
+            const handleDownload = (filePath: string, fileName: string) => {
+              const link = document.createElement('a');
+              link.href = filePath;
+              link.target = "_blank";
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            };
+
+             const handleView = (filePath: string) => {
+              window.open(filePath, '_blank');
+            };
+
+            // --- Filtering Logic ---
+            const filterDocs = (docs: Document[]) =>
+              docs.filter(doc => doc.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+            const filteredMyDocs = filterDocs(myDocs);
+            const filteredSharedByMeDocs = filterDocs(sharedByMeDocs);
+            const filteredSharedWithMeDocs = filterDocs(sharedWithMeDocs); // <-- Filter the new list
+
+
+            // --- Render Loading/Empty states ---
+            const renderLoading = () => (
+              <div className="flex justify-center items-center h-40">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            );
+            const renderEmpty = (message: string) => (
+               <p className="text-center text-muted-foreground py-4">{message}</p>
+            );
+
+            return (
+              <DashboardLayout userType="provider">
+                {/* Header */}
+                <div className="grid gap-4">
+                  <h1 className="text-3xl font-bold tracking-tight">Documents</h1>
+                  <p className="text-muted-foreground">
+                    Manage documents you own and view documents shared with you.
+                  </p>
+                </div>
+
+                 {/* Hidden file input */}
+                 <input
+                    type="file" ref={fileInputRef} onChange={handleFileSelected}
+                    style={{ display: 'none' }}
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.jpg,.jpeg,.png"
+                />
+
+                {/* Search and Actions */}
+                <div className="flex justify-between flex-wrap gap-4 mt-6">
+                  <div className="relative w-full max-w-sm">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="search" placeholder="Search documents..." className="pl-8 w-full"
+                      value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                    />
                   </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Folders</CardTitle>
-                <CardDescription>
-                  Organize your documents in folders
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                  {folders.map((folder) => (
-                    <Card key={folder.id} className="cursor-pointer hover:bg-accent transition-colors">
-                      <CardContent className="p-4 flex items-center gap-3">
-                        <Folder className="h-8 w-8 text-muted-foreground" />
-                        <div>
-                          <div className="font-medium">{folder.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {folder.files} files
-                          </div>
-                        </div>
+                  <div className="flex gap-2">
+                    <Button onClick={handleUploadClick}>
+                      <Upload className="mr-2 h-4 w-4" /> Upload
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Tabs */}
+                <Tabs defaultValue="my-documents" className="mt-6">
+                  <TabsList>
+                    <TabsTrigger value="my-documents">My Documents</TabsTrigger>
+                    <TabsTrigger value="shared-by-me">Shared by Me</TabsTrigger>
+                    <TabsTrigger value="shared-with-me">Shared With Me</TabsTrigger> {/* <-- New Tab Trigger */}
+                  </TabsList>
+
+                  {/* My Documents Tab */}
+                  <TabsContent value="my-documents" className="mt-4">
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">My Files</CardTitle>
+                        <CardDescription>Documents you have uploaded</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-[400px] pr-4">
+                          {isLoadingMyDocs ? renderLoading() : filteredMyDocs.length > 0 ? (
+                            <div className="space-y-2">
+                              {filteredMyDocs.map((doc) => (
+                                <DocumentRow // Use the row for owned documents
+                                  key={doc.id}
+                                  document={doc}
+                                  onDelete={() => handleDelete(doc)}
+                                  onShare={() => handleShare(doc)}
+                                  onDownload={() => handleDownload(doc.file_path, doc.name)}
+                                  onView={() => handleView(doc.file_path)}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                             renderEmpty("You haven't uploaded any documents yet.")
+                          )}
+                        </ScrollArea>
                       </CardContent>
                     </Card>
-                  ))}
+                  </TabsContent>
+
+                  {/* Shared By Me Tab */}
+                  <TabsContent value="shared-by-me" className="mt-4"> {/* Updated value */}
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Documents Shared by Me</CardTitle>
+                        <CardDescription>Files you own and have shared with others</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-[400px] pr-4">
+                           {isLoadingSharedByMe ? renderLoading() : filteredSharedByMeDocs.length > 0 ? (
+                            <div className="space-y-2">
+                              {filteredSharedByMeDocs.map((doc) => (
+                                <SharedDocumentRow // Use the row showing who it's shared with
+                                  key={doc.id}
+                                  document={doc}
+                                  profiles={userProfiles} // Pass combined profiles
+                                  isLoadingProfiles={isLoadingProfiles}
+                                  onManageShare={() => handleShare(doc)} // Pass whole doc
+                                  onDownload={() => handleDownload(doc.file_path, doc.name)}
+                                  onView={() => handleView(doc.file_path)} // Added view action
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                              renderEmpty("You haven't shared any of your documents yet.")
+                          )}
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  {/* Shared With Me Tab (NEW) */}
+                  <TabsContent value="shared-with-me" className="mt-4">
+                      <Card>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base">Documents Shared With Me</CardTitle>
+                          <CardDescription>Files shared with you by clients or others</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <ScrollArea className="h-[400px] pr-4">
+                             {isLoadingSharedWithMe ? renderLoading() : filteredSharedWithMeDocs.length > 0 ? (
+                              <div className="space-y-2">
+                                {filteredSharedWithMeDocs.map((doc) => (
+                                  // Reuse/Adapt ClientDocumentRow logic here
+                                  <ReceivedDocumentRow
+                                    key={doc.id}
+                                    document={doc}
+                                    // Pass the profile of the owner (doc.user_id)
+                                    sharerProfile={userProfiles.get(doc.user_id)}
+                                    isLoadingProfiles={isLoadingProfiles}
+                                    onDownload={() => handleDownload(doc.file_path, doc.name)}
+                                    onView={() => handleView(doc.file_path)}
+                                  />
+                                ))}
+                              </div>
+                            ) : (
+                                renderEmpty("No documents have been shared with you yet.")
+                            )}
+                          </ScrollArea>
+                        </CardContent>
+                      </Card>
+                   </TabsContent>
+
+                </Tabs>
+              </DashboardLayout>
+            );
+          };
+
+
+          // --- Component: DocumentRow (For owned documents) ---
+          interface DocumentRowProps {
+            document: Document;
+            onDelete: () => void;
+            onShare: () => void;
+            onDownload: () => void;
+            onView: () => void;
+          }
+          const DocumentRow = ({ document, onDelete, onShare, onDownload, onView }: DocumentRowProps) => {
+            // (Keep implementation from previous versions - displays doc info and actions: view, share, download, delete)
+             return (
+              <div className="flex items-center justify-between p-2 rounded-md hover:bg-accent">
+                <div className="flex items-center gap-3 flex-grow min-w-0">
+                  <div className="text-muted-foreground flex-shrink-0">
+                    {getFileIcon(document.file_type)}
+                  </div>
+                  <div className="truncate">
+                    <div className="font-medium text-sm truncate">{document.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Updated {formatDate(document.updated_at)}
+                    </div>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-        <TabsContent value="shared-with-clients" className="mt-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">
-                Documents Shared with Clients
-              </CardTitle>
-              <CardDescription>
-                Files you've shared with your clients
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px]">
-                <div className="space-y-2">
-                  {sharedDocuments.map((doc) => (
-                    <SharedDocumentRow key={doc.id} document={doc} />
-                  ))}
+                <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onView} title="View"> <Eye className="h-4 w-4" /> </Button>
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onShare} title="Manage Sharing"> <Share2 className="h-4 w-4" /> </Button>
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onDownload} title="Download"> <Download className="h-4 w-4" /> </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="icon" variant="ghost" className="h-8 w-8" title="More options"> <MoreVertical className="h-4 w-4" /> </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={onDelete} className="text-destructive">
+                        <Trash2 className="mr-2 h-4 w-4" /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="templates" className="mt-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Document Templates</CardTitle>
-              <CardDescription>
-                Reusable templates for common document types
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {templates.map((template) => (
-                  <Card key={template.id} className="cursor-pointer hover:bg-accent transition-colors">
-                    <CardContent className="p-4 flex items-center gap-3">
-                      <FileText className="h-8 w-8 text-muted-foreground" />
-                      <div>
-                        <div className="font-medium">{template.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {template.description}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </DashboardLayout>
-  );
-};
+            );
+          };
 
-interface Document {
-  id: string;
-  name: string;
-  type: string;
-  size: string;
-  modified: string;
-}
+          // --- Component: SharedDocumentRow (For documents owned by provider, shared BY provider) ---
+          interface SharedDocumentRowProps {
+            document: Document;
+            profiles: ProfileMap;
+            isLoadingProfiles: boolean;
+            onManageShare: () => void;
+            onDownload: () => void;
+            onView: () => void; // Added onView
+          }
+          const SharedDocumentRow = ({ document, profiles, isLoadingProfiles, onManageShare, onDownload, onView }: SharedDocumentRowProps) => {
+            // (Keep implementation from previous versions - displays doc info, avatars of shared_with, and actions: view, manage share, download)
+            const sharedWithCount = document.shared_with?.length || 0;
+            const displayLimit = 3;
+            const displayedUserIds = document.shared_with?.slice(0, displayLimit) || [];
 
-interface SharedDocument extends Document {
-  sharedWith: {
-    name: string;
-    avatar?: string;
-  }[];
-}
+            return (
+              <div className="flex items-center justify-between p-2 rounded-md hover:bg-accent">
+                {/* File Info */}
+                <div className="flex items-center gap-3 flex-grow min-w-0">
+                  <div className="text-muted-foreground flex-shrink-0">{getFileIcon(document.file_type)}</div>
+                  <div className="truncate">
+                    <div className="font-medium text-sm truncate">{document.name}</div>
+                    <div className="text-xs text-muted-foreground">Shared {formatDate(document.updated_at)}</div>
+                  </div>
+                </div>
+                {/* Shared With Avatars & Actions */}
+                <div className="flex items-center gap-3 flex-shrink-0 ml-2">
+                   {sharedWithCount > 0 && !isLoadingProfiles && (
+                       <div className="flex -space-x-2" title={`Shared with ${sharedWithCount} user(s)`}>
+                          {displayedUserIds.map((userId) => {
+                              const profile = profiles.get(userId);
+                              return (
+                                  <Avatar key={userId} className="h-6 w-6 border-2 border-background">
+                                      <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.full_name || userId} />
+                                      <AvatarFallback>{profile?.full_name?.charAt(0)?.toUpperCase() || '?'}</AvatarFallback>
+                                  </Avatar>
+                              );
+                          })}
+                          {sharedWithCount > displayLimit && ( <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs border-2 border-background"> +{sharedWithCount - displayLimit} </div> )}
+                      </div>
+                   )}
+                   {isLoadingProfiles && sharedWithCount > 0 && <Loader2 className="h-4 w-4 animate-spin"/>}
+                   {sharedWithCount === 0 && !isLoadingProfiles && <span className="text-xs text-muted-foreground">Not shared</span>}
 
-interface Folder {
-  id: string;
-  name: string;
-  files: number;
-}
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onView} title="View"> <Eye className="h-4 w-4" /> </Button>
+                  <Button size="sm" variant="ghost" onClick={onManageShare} title="Manage Sharing"> <Users className="h-4 w-4 mr-1" /> Manage </Button>
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onDownload} title="Download"> <Download className="h-4 w-4" /> </Button>
+                </div>
+              </div>
+            );
+          };
 
-interface Template {
-  id: string;
-  name: string;
-  description: string;
-}
 
-interface DocumentRowProps {
-  document: Document;
-}
+          // --- Component: ReceivedDocumentRow (For documents shared WITH provider) ---
+          // Adapted from ClientDocumentRow
+          interface ReceivedDocumentRowProps {
+            document: Document;
+            sharerProfile?: UserProfile; // Profile of the owner/sharer
+            isLoadingProfiles: boolean;
+            onDownload: () => void;
+            onView: () => void;
+          }
+          const ReceivedDocumentRow = ({ document, sharerProfile, isLoadingProfiles, onDownload, onView }: ReceivedDocumentRowProps) => {
+            const sharerName = sharerProfile?.full_name || 'Unknown User';
+            const sharerInitial = sharerName?.charAt(0)?.toUpperCase() || '?';
 
-const DocumentRow = ({ document }: DocumentRowProps) => {
-  return (
-    <div className="flex items-center justify-between p-2 rounded-md hover:bg-accent">
-      <div className="flex items-center gap-3">
-        <div className="text-muted-foreground">
-          {document.type === "pdf" ? (
-            <FileText className="h-5 w-5" />
-          ) : document.type === "doc" ? (
-            <File className="h-5 w-5" />
-          ) : (
-            <File className="h-5 w-5" />
-          )}
-        </div>
-        <div>
-          <div className="font-medium text-sm">{document.name}</div>
-          <div className="text-xs text-muted-foreground">
-            {document.modified} · {document.size}
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center gap-1">
-        <Button size="icon" variant="ghost" className="h-8 w-8">
-          <Eye className="h-4 w-4" />
-        </Button>
-        <Button size="icon" variant="ghost" className="h-8 w-8">
-          <Share2 className="h-4 w-4" />
-        </Button>
-        <Button size="icon" variant="ghost" className="h-8 w-8">
-          <Download className="h-4 w-4" />
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-4 w-4"
-              >
-                <circle cx="12" cy="12" r="1" />
-                <circle cx="12" cy="5" r="1" />
-                <circle cx="12" cy="19" r="1" />
-              </svg>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem>Rename</DropdownMenuItem>
-            <DropdownMenuItem>Duplicate</DropdownMenuItem>
-            <DropdownMenuItem>Move</DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive">
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
-  );
-};
+            return (
+              <div className="flex items-center justify-between p-3 border rounded-md hover:bg-accent/50 transition-colors gap-2">
+                {/* File Info */}
+                <div className="flex items-center gap-3 flex-grow min-w-0">
+                  <div className="bg-primary/10 p-2 rounded flex-shrink-0">
+                     {getFileIcon(document.file_type)}
+                  </div>
+                  <div className="truncate">
+                    <h3 className="font-medium text-sm truncate">{document.name}</h3>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                      {/* Show Sharer Info */}
+                      {!isLoadingProfiles && sharerProfile && (
+                          <>
+                          <div className="flex items-center gap-1" title={`Shared by ${sharerName}`}>
+                              <Avatar className="h-4 w-4">
+                                  <AvatarImage src={sharerProfile.avatar_url || undefined} alt={sharerName} />
+                                  <AvatarFallback className="text-[8px]">{sharerInitial}</AvatarFallback>
+                              </Avatar>
+                              <span className="hidden sm:inline">{sharerName}</span> {/* Hide name on small screens */}
+                          </div>
+                          <span>•</span>
+                          </>
+                      )}
+                       {isLoadingProfiles && <Loader2 className="h-3 w-3 animate-spin"/>}
+                       {!isLoadingProfiles && !sharerProfile && <span>Shared by Unknown •</span>}
+                      {/* Date */}
+                      <span className="flex items-center">
+                        <Calendar className="mr-1 h-3 w-3" /> {formatDate(document.updated_at)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-interface SharedDocumentRowProps {
-  document: SharedDocument;
-}
+                {/* Actions (Limited for received documents) */}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onView} title="View">
+                       <Eye className="h-4 w-4" />
+                   </Button>
+                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onDownload} title="Download">
+                       <Download className="h-4 w-4" />
+                   </Button>
+                   {/* No Delete or Share actions for documents not owned */}
+                </div>
+              </div>
+            );
+          };
 
-const SharedDocumentRow = ({ document }: SharedDocumentRowProps) => {
-  return (
-    <div className="flex items-center justify-between p-2 rounded-md hover:bg-accent">
-      <div className="flex items-center gap-3">
-        <div className="text-muted-foreground">
-          {document.type === "pdf" ? (
-            <FileText className="h-5 w-5" />
-          ) : document.type === "doc" ? (
-            <File className="h-5 w-5" />
-          ) : (
-            <File className="h-5 w-5" />
-          )}
-        </div>
-        <div>
-          <div className="font-medium text-sm">{document.name}</div>
-          <div className="text-xs text-muted-foreground">
-            {document.modified} · {document.size}
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <div className="flex -space-x-2">
-          {document.sharedWith.slice(0, 3).map((person, i) => (
-            <Avatar key={i} className="h-6 w-6 border-2 border-background">
-              <AvatarImage src={person.avatar || "/placeholder.svg"} alt={person.name} />
-              <AvatarFallback>{person.name.charAt(0)}</AvatarFallback>
-            </Avatar>
-          ))}
-          {document.sharedWith.length > 3 && (
-            <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs border-2 border-background">
-              +{document.sharedWith.length - 3}
-            </div>
-          )}
-        </div>
-        <Button size="sm" variant="ghost">
-          <Users className="h-4 w-4 mr-1" />
-          Manage
-        </Button>
-        <Button size="icon" variant="ghost" className="h-8 w-8">
-          <Download className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  );
-};
 
-// Sample data
-const myDocuments: Document[] = [
-  {
-    id: "1",
-    name: "Tax_Planning_Guide_2023.pdf",
-    type: "pdf",
-    size: "2.3 MB",
-    modified: "Today, 10:30 AM",
-  },
-  {
-    id: "2",
-    name: "Client_Agreement_Template.doc",
-    type: "doc",
-    size: "542 KB",
-    modified: "Yesterday, 2:15 PM",
-  },
-  {
-    id: "3",
-    name: "Financial_Projections_Q3.xlsx",
-    type: "xlsx",
-    size: "1.8 MB",
-    modified: "Jul 15, 2023",
-  },
-  {
-    id: "4",
-    name: "Estate_Planning_Worksheet.pdf",
-    type: "pdf",
-    size: "3.1 MB",
-    modified: "Jul 10, 2023",
-  },
-  {
-    id: "5",
-    name: "Business_Formation_Checklist.pdf",
-    type: "pdf",
-    size: "890 KB",
-    modified: "Jul 5, 2023",
-  },
-  {
-    id: "6",
-    name: "Investment_Strategy_Presentation.pptx",
-    type: "pptx",
-    size: "4.2 MB",
-    modified: "Jun 28, 2023",
-  },
-];
-
-const sharedDocuments: SharedDocument[] = [
-  {
-    id: "1",
-    name: "Tax_Strategy_Williams.pdf",
-    type: "pdf",
-    size: "1.7 MB",
-    modified: "Today, 9:45 AM",
-    sharedWith: [
-      { name: "Sarah Williams" },
-    ],
-  },
-  {
-    id: "2",
-    name: "Financial_Plan_Johnson.pdf",
-    type: "pdf",
-    size: "3.2 MB",
-    modified: "Yesterday, 4:30 PM",
-    sharedWith: [
-      { name: "Alex Johnson" },
-      { name: "Jennifer Johnson" },
-    ],
-  },
-  {
-    id: "3",
-    name: "Estate_Documents_Brown.zip",
-    type: "zip",
-    size: "8.5 MB",
-    modified: "Jul 16, 2023",
-    sharedWith: [
-      { name: "Michael Brown" },
-      { name: "Emily Brown" },
-      { name: "David Brown" },
-      { name: "Sarah Brown" },
-    ],
-  },
-  {
-    id: "4",
-    name: "LLC_Formation_Davis.pdf",
-    type: "pdf",
-    size: "1.3 MB",
-    modified: "Jul 12, 2023",
-    sharedWith: [
-      { name: "Emily Davis" },
-    ],
-  },
-];
-
-const folders: Folder[] = [
-  {
-    id: "1",
-    name: "Tax Planning",
-    files: 12,
-  },
-  {
-    id: "2",
-    name: "Estate Planning",
-    files: 8,
-  },
-  {
-    id: "3",
-    name: "Business Formation",
-    files: 15,
-  },
-  {
-    id: "4",
-    name: "Financial Planning",
-    files: 10,
-  },
-  {
-    id: "5",
-    name: "Client Templates",
-    files: 6,
-  },
-  {
-    id: "6",
-    name: "Marketing Materials",
-    files: 9,
-  },
-];
-
-const templates: Template[] = [
-  {
-    id: "1",
-    name: "Client Agreement",
-    description: "Standard service agreement for new clients",
-  },
-  {
-    id: "2",
-    name: "Tax Planning Worksheet",
-    description: "Form for collecting tax planning information",
-  },
-  {
-    id: "3",
-    name: "Estate Planning Questionnaire",
-    description: "Comprehensive estate planning questions",
-  },
-  {
-    id: "4",
-    name: "Business Formation Checklist",
-    description: "Steps for forming a new business entity",
-  },
-  {
-    id: "5",
-    name: "Financial Planning Intake Form",
-    description: "Initial assessment for financial planning clients",
-  },
-  {
-    id: "6",
-    name: "Investment Policy Statement",
-    description: "Template for client investment strategies",
-  },
-];
-
-export default Documents;
+          export default Documents;

@@ -61,6 +61,11 @@ const MessagesPage = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const activeContactRef = useRef(activeContact);
+
+  useEffect(() => {
+    activeContactRef.current = activeContact;
+  }, [activeContact]);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -120,7 +125,6 @@ const MessagesPage = () => {
     if (!currentUser) return;
     const unsubscribe = subscribeToMessages(
       async (newMessage) => {
-        console.log('New message received:', newMessage);
         if (newMessage.sender_id === currentUser.id || newMessage.receiver_id === currentUser.id) {
           if (newMessage.is_video_call && newMessage.receiver_id === currentUser.id) {
             toast.success(`Incoming video call`, {
@@ -134,45 +138,55 @@ const MessagesPage = () => {
               duration: 10000,
             });
           }
-          if (activeContact && (newMessage.sender_id === activeContact.user_id || newMessage.receiver_id === activeContact.user_id)) {
-            setMessages(prev => [
-              ...prev,
-              { ...newMessage, isMine: newMessage.sender_id === currentUser.id },
-            ]);
-            if (newMessage.receiver_id === currentUser.id) {
-              await markMessagesAsRead(activeContact.user_id, currentUser.id);
+          setMessages(prev => {
+            if (activeContactRef.current && 
+                (newMessage.sender_id === activeContactRef.current.user_id || newMessage.receiver_id === activeContactRef.current.user_id)) {
+              return [
+                ...prev,
+                { ...newMessage, isMine: newMessage.sender_id === currentUser.id },
+              ];
             }
+            return prev;
+          });
+          if (newMessage.receiver_id === currentUser.id && activeContactRef.current?.user_id === newMessage.sender_id) {
+            await markMessagesAsRead(newMessage.sender_id, currentUser.id);
           }
           const otherUserId = newMessage.sender_id === currentUser.id ? newMessage.receiver_id : newMessage.sender_id;
-          const existingContact = contacts.find(c => c.user_id === otherUserId);
-          if (existingContact) {
-            setContacts(prev => prev.map(contact =>
-              contact.user_id === otherUserId
-                ? {
-                    ...contact,
+          setContacts(prev => {
+            const existingContact = prev.find(c => c.user_id === otherUserId);
+            if (existingContact) {
+              return prev.map(contact =>
+                contact.user_id === otherUserId
+                  ? {
+                      ...contact,
+                      lastMessage: newMessage.is_video_call ? "Video call" : newMessage.content,
+                      lastMessageTime: "Just now",
+                      unreadCount: newMessage.sender_id === contact.user_id && 
+                                  newMessage.receiver_id === currentUser.id && 
+                                  contact.user_id !== activeContactRef.current?.user_id
+                        ? contact.unreadCount + 1
+                        : contact.unreadCount,
+                    }
+                  : contact
+              );
+            } else {
+              getUserFullName(otherUserId).then(userName => {
+                setContacts(prevContacts => [
+                  {
+                    id: newMessage.id,
+                    name: userName,
                     lastMessage: newMessage.is_video_call ? "Video call" : newMessage.content,
+                    avatar: '/placeholder.svg',
+                    unreadCount: newMessage.sender_id === otherUserId ? 1 : 0,
+                    user_id: otherUserId,
                     lastMessageTime: "Just now",
-                    unreadCount: newMessage.sender_id === contact.user_id && newMessage.receiver_id === currentUser.id
-                      ? contact.unreadCount + 1
-                      : contact.unreadCount,
-                  }
-                : contact
-            ));
-          } else {
-            const userName = await getUserFullName(otherUserId);
-            setContacts(prev => [
-              {
-                id: newMessage.id,
-                name: userName,
-                lastMessage: newMessage.is_video_call ? "Video call" : newMessage.content,
-                avatar: '/placeholder.svg',
-                unreadCount: newMessage.sender_id === otherUserId ? 1 : 0,
-                user_id: otherUserId,
-                lastMessageTime: "Just now",
-              },
-              ...prev,
-            ]);
-          }
+                  },
+                  ...prevContacts,
+                ]);
+              });
+              return prev;
+            }
+          });
         }
       },
       (error) => {
@@ -180,8 +194,11 @@ const MessagesPage = () => {
         toast.error('Lost connection to message service');
       }
     );
-    return unsubscribe;
-  }, [currentUser, activeContact, contacts]);
+    return () => {
+      console.log('Cleaning up subscription');
+      unsubscribe();
+    };
+  }, [currentUser]);
 
   useEffect(() => {
     const loadMessages = async () => {

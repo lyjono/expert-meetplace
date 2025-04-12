@@ -1,6 +1,6 @@
-
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
+import { createLeadFromAppointment } from '@/services/leads'; // Import the lead creation function
 
 export interface Appointment {
   id: string;
@@ -18,17 +18,15 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
     const user = await getCurrentUser();
     if (!user) throw new Error('User not authenticated');
 
-    // Get the client profile ID
     const { data: clientProfile, error: profileError } = await supabase
       .from('client_profiles')
       .select('*')
       .eq('user_id', user.id)
       .single();
-      
+
     if (profileError) throw profileError;
     if (!clientProfile) throw new Error('Client profile not found');
 
-    // Query for appointments
     let query = supabase
       .from('appointments')
       .select(`
@@ -42,10 +40,8 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
       `)
       .eq('client_id', clientProfile.id);
 
-    // Add status filter if provided
     if (status) {
       if (status.includes(',')) {
-        // If multiple statuses (e.g., "confirmed,pending")
         const statusArray = status.split(',');
         query = query.in('status', statusArray);
       } else {
@@ -57,7 +53,6 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
 
     if (error) throw error;
 
-    // Transform data to match the component's expected format
     return data.map(item => ({
       id: item.id,
       expert: item.provider_profiles && item.provider_profiles[0] ? item.provider_profiles[0].name : 'Unknown Expert',
@@ -78,17 +73,15 @@ export const getProviderAppointments = async (status?: string): Promise<Appointm
     const user = await getCurrentUser();
     if (!user) throw new Error('User not authenticated');
 
-    // Get the provider profile ID
     const { data: providerProfile, error: profileError } = await supabase
       .from('provider_profiles')
       .select('*')
       .eq('user_id', user.id)
       .single();
-      
+
     if (profileError) throw profileError;
     if (!providerProfile) throw new Error('Provider profile not found');
 
-    // Query for appointments
     let query = supabase
       .from('appointments')
       .select(`
@@ -102,10 +95,8 @@ export const getProviderAppointments = async (status?: string): Promise<Appointm
       `)
       .eq('provider_id', providerProfile.id);
 
-    // Add status filter if provided
     if (status) {
       if (status.includes(',')) {
-        // If multiple statuses (e.g., "confirmed,pending")
         const statusArray = status.split(',');
         query = query.in('status', statusArray);
       } else {
@@ -117,10 +108,9 @@ export const getProviderAppointments = async (status?: string): Promise<Appointm
 
     if (error) throw error;
 
-    // Transform data to match the component's expected format
     return data.map(item => ({
       id: item.id,
-      expert: 'You', // Since this is the provider's view
+      expert: 'You',
       client: item.client_profiles && item.client_profiles[0] ? item.client_profiles[0].name : 'Unknown Client',
       service: item.service,
       date: item.date,
@@ -135,7 +125,7 @@ export const getProviderAppointments = async (status?: string): Promise<Appointm
 };
 
 export const createAppointment = async (
-  providerId: string,
+  providerId: string, // This is provider_profiles.id
   service: string,
   date: string,
   time: string,
@@ -145,26 +135,23 @@ export const createAppointment = async (
     const user = await getCurrentUser();
     if (!user) throw new Error('User not authenticated');
 
-    // Get the client profile ID
     const { data: clientProfile, error: profileError } = await supabase
       .from('client_profiles')
       .select('id')
       .eq('user_id', user.id)
       .single();
-      
+
     if (profileError) {
       console.error('Error getting client profile:', profileError);
       throw profileError;
     }
-    
     if (!clientProfile) {
       console.error('Client profile not found');
       throw new Error('Client profile not found');
     }
 
     console.log('Creating appointment with client_id:', clientProfile.id);
-    
-    // Create appointment
+
     const { data, error } = await supabase
       .from('appointments')
       .insert({
@@ -176,20 +163,26 @@ export const createAppointment = async (
         status: 'pending',
         method
       })
-      .select();
+      .select()
+      .single(); // Return the inserted appointment
 
     if (error) {
       console.error('Supabase error creating appointment:', error);
       throw error;
     }
-    
+
     console.log('Appointment created successfully:', data);
-    return true;
-  } catch (error) {
-    console.error('Error creating appointment:', error);
-    return false;
-  }
-};
+
+    // Create a lead for this appointment
+    const leadCreated = await createLeadFromAppointment(data, providerId);
+        console.log('Lead created:', leadCreated);
+
+        return true;
+      } catch (error) {
+        console.error('Error creating appointment:', error);
+        return false;
+      }
+    };
 
 export const cancelAppointment = async (appointmentId: string): Promise<boolean> => {
   try {
@@ -204,4 +197,26 @@ export const cancelAppointment = async (appointmentId: string): Promise<boolean>
     console.error('Error canceling appointment:', error);
     return false;
   }
+};
+
+// Optional: Real-time subscription for appointments (if needed elsewhere)
+export const subscribeToAppointments = (providerId: string, callback: (appointment: any) => void) => {
+  const channel = supabase
+    .channel('appointments-changes')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'appointments', filter: `provider_id=eq.${providerId}` },
+      async (payload) => {
+        const newAppointment = payload.new;
+        callback(newAppointment);
+        await createLeadFromAppointment(newAppointment, providerId);
+      }
+    )
+    .subscribe((status) => {
+      console.log('Appointment subscription status:', status);
+    });
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
 };

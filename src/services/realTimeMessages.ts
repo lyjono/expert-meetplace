@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
+import { createLeadFromMessage } from '@/services/leads';
 
 export interface Message {
   id: string;
@@ -170,43 +171,40 @@ export const markMessagesAsRead = async (senderId: string, receiverId: string): 
 };
 
 export const subscribeToMessages = (
-  callback: (message: Message) => void,
+  callback: (message: any) => void,
   errorCallback?: (error: any) => void
 ) => {
-  try {
-    const channel = supabase
-      .channel('messages-changes')
-      .on('postgres_changes', 
-        { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'messages' 
-        },
-        (payload) => {
-          console.log('New message received in subscription:', payload);
-          callback(payload.new as Message);
+  const channel = supabase
+    .channel('messages-changes')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages' },
+      async (payload) => {
+        const newMessage = payload.new;
+        callback(newMessage);
+
+        const { data: receiver } = await supabase
+          .from('users_view')
+          .select('user_type')
+          .eq('user_id', newMessage.receiver_id)
+          .single();
+        if (receiver?.user_type === 'provider') {
+    const leadCreated = await createLeadFromMessage(newMessage, newMessage.receiver_id);
+          console.log('Lead created from message:', leadCreated);
         }
-      )
-      .subscribe((status) => {
-        console.log('Subscription status:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('Successfully subscribed to messages!');
-        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-          console.error('Subscription closed or error:', status);
-          errorCallback && errorCallback(new Error(`Subscription status: ${status}`));
-        }
-      });
-      
-    return () => {
-      console.log('Unsubscribing from messages channel');
-      supabase.removeChannel(channel);
-    };
-  } catch (error) {
-    console.error('Error setting up subscription:', error);
-    errorCallback && errorCallback(error);
-    return () => {};
-  }
-};
+      }
+    )
+    .subscribe((status) => {
+      console.log('Subscription status:', status);
+      if (status === 'SUBSCRIBED') console.log('Successfully subscribed to messages!');
+      if (status === 'CLOSED') console.log('Subscription closed');
+    });
+
+  return () => {
+    console.log('Unsubscribing from messages channel');
+    supabase.removeChannel(channel);
+  };
+  };
 
 export const getProviderUserId = async (providerId: string): Promise<string | null> => {
   try {
