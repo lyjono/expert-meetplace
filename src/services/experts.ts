@@ -1,4 +1,3 @@
-
 import { supabase } from '@/lib/supabase';
 
 export interface Expert {
@@ -13,7 +12,8 @@ export interface Expert {
 
 export const searchExperts = async (
   searchTerm?: string,
-  category?: string
+  category?: string,
+  city?: string
 ): Promise<Expert[]> => {
   try {
     let query = supabase
@@ -28,6 +28,10 @@ export const searchExperts = async (
       query = query.eq('category', category);
     }
 
+    if (city) {
+      query = query.ilike('city', `%${city}%`);
+    }
+
     const { data, error } = await query;
 
     if (error) throw error;
@@ -37,8 +41,8 @@ export const searchExperts = async (
       name: expert.name,
       specialty: expert.specialty || '',
       category: expert.category,
-      rating: expert.rating || 4.5, // Default rating if not available
-      image: expert.image_url || '/placeholder.svg', // Default image
+      rating: expert.rating || 4.5,
+      image: expert.image_url || '/placeholder.svg',
       years_experience: expert.years_experience || null,
     }));
   } catch (error) {

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { getUserProfile, supabase } from "@/lib/supabase";
+import { v4 as uuidv4 } from "uuid"; // Import uuid for unique file names
 
 interface ClientProfileData {
   id: string;
@@ -29,6 +29,7 @@ const ClientProfile = () => {
   const [profile, setProfile] = useState<ClientProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [formData, setFormData] = useState<Partial<ClientProfileData>>({});
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -48,7 +49,7 @@ const ClientProfile = () => {
         setIsLoading(false);
       }
     };
-    
+
     fetchProfile();
   }, []);
 
@@ -57,11 +58,86 @@ const ClientProfile = () => {
     setFormData(prev => ({ ...prev, [id.replace('profile-', '')]: value }));
   };
 
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true);
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      // Validate file
+      if (!file.type.startsWith('image/')) {
+        throw new Error('Only image files are allowed');
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('File size exceeds 5MB limit');
+      }
+
+      // Generate uniques file name
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${uuidv4()}.${fileExt}`;
+      const filePath = `${profile?.user_id}/${fileName}`;
+
+      // Upload to Supabase storage
+      const { error: uploadError } = await supabase.storage
+        .from('client-images') // Use client-images bucket
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('client-images')
+        .getPublicUrl(filePath);
+
+      // Update profile with new avatar URL
+      const { error: updateError } = await supabase
+        .from('client_profiles')
+        .update({ avatar_url: urlData.publicUrl })
+        .eq('id', profile?.id);
+
+      if (updateError) throw updateError;
+
+      // Update local state
+      setProfile(prev => prev ? { ...prev, avatar_url: urlData.publicUrl } : prev);
+      setFormData(prev => ({ ...prev, avatar_url: urlData.publicUrl }));
+      toast.success('Profile picture updated');
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      toast.error(error.message || 'Failed to update profile picture');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    try {
+      setUploading(true);
+
+      // Update profile to remove avatar URL
+      const { error } = await supabase
+        .from('client_profiles')
+        .update({ avatar_url: null })
+        .eq('id', profile?.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setProfile(prev => prev ? { ...prev, avatar_url: null } : prev);
+      setFormData(prev => ({ ...prev, avatar_url: null }));
+      toast.success('Profile picture removed');
+    } catch (error) {
+      console.error('Error removing image:', error);
+      toast.error('Failed to remove profile picture');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!profile) return;
-    
+
     try {
       const { error } = await supabase
         .from('client_profiles')
@@ -76,9 +152,9 @@ const ClientProfile = () => {
           bio: formData.bio
         })
         .eq('id', profile.id);
-        
+
       if (error) throw error;
-      
+
       setProfile(prev => ({ ...prev!, ...formData } as ClientProfileData));
       toast.success("Profile updated successfully");
     } catch (error) {
@@ -135,8 +211,26 @@ const ClientProfile = () => {
                 <AvatarFallback>{profile.name.charAt(0)}</AvatarFallback>
               </Avatar>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm">Change Photo</Button>
-                <Button variant="outline" size="sm">Remove</Button>
+                <Button variant="outline" size="sm" disabled={uploading} asChild>
+                  <label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageUpload}
+                      disabled={uploading}
+                    />
+                    {uploading ? 'Uploading...' : 'Change Photo'}
+                  </label>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRemovePhoto}
+                  disabled={uploading || !profile.avatar_url}
+                >
+                  Remove
+                </Button>
               </div>
             </CardContent>
           </Card>

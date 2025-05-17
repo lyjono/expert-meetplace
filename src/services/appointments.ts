@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
 import { createLeadFromAppointment } from '@/services/leads'; // Import the lead creation function
+import { startVideoCall } from '@/services/realTimeMessages'; // Import startVideoCall
 
 export interface Appointment {
   id: string;
@@ -11,6 +12,7 @@ export interface Appointment {
   status: 'confirmed' | 'pending' | 'canceled' | 'completed';
   method: 'video' | 'in-person';
   client?: string;
+  video_call_room_id?: string;
 }
 
 export const getClientAppointments = async (status?: string): Promise<Appointment[]> => {
@@ -20,7 +22,7 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
 
     const { data: clientProfile, error: profileError } = await supabase
       .from('client_profiles')
-      .select('*')
+      .select('id')
       .eq('user_id', user.id)
       .single();
 
@@ -29,15 +31,7 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
 
     let query = supabase
       .from('appointments')
-      .select(`
-        id,
-        service,
-        date,
-        time,
-        status,
-        method,
-        provider_profiles(name)
-      `)
+      .select('id, service, date, time, status, method, video_call_room_id, provider_profiles(name)') // Simplified
       .eq('client_id', clientProfile.id);
 
     if (status) {
@@ -55,12 +49,13 @@ export const getClientAppointments = async (status?: string): Promise<Appointmen
 
     return data.map(item => ({
       id: item.id,
-      expert: item.provider_profiles && item.provider_profiles[0] ? item.provider_profiles[0].name : 'Unknown Expert',
+      expert: item.provider_profiles?.[0]?.name || 'Unknown Expert',
       service: item.service,
       date: item.date,
       time: item.time,
       status: item.status,
-      method: item.method
+      method: item.method,
+      video_call_room_id: item.video_call_room_id
     }));
   } catch (error) {
     console.error('Error fetching appointments:', error);
@@ -75,7 +70,7 @@ export const getProviderAppointments = async (status?: string): Promise<Appointm
 
     const { data: providerProfile, error: profileError } = await supabase
       .from('provider_profiles')
-      .select('*')
+      .select('id')
       .eq('user_id', user.id)
       .single();
 
@@ -84,15 +79,7 @@ export const getProviderAppointments = async (status?: string): Promise<Appointm
 
     let query = supabase
       .from('appointments')
-      .select(`
-        id,
-        service,
-        date,
-        time,
-        status,
-        method,
-        client_profiles(name)
-      `)
+      .select('id, service, date, time, status, method, video_call_room_id, client_profiles(name)') // Simplified
       .eq('provider_id', providerProfile.id);
 
     if (status) {
@@ -111,12 +98,13 @@ export const getProviderAppointments = async (status?: string): Promise<Appointm
     return data.map(item => ({
       id: item.id,
       expert: 'You',
-      client: item.client_profiles && item.client_profiles[0] ? item.client_profiles[0].name : 'Unknown Client',
+      client: item.client_profiles?.[0]?.name || 'Unknown Client',
       service: item.service,
       date: item.date,
       time: item.time,
       status: item.status,
-      method: item.method
+      method: item.method,
+      video_call_room_id: item.video_call_room_id
     }));
   } catch (error) {
     console.error('Error fetching appointments:', error);
@@ -124,8 +112,9 @@ export const getProviderAppointments = async (status?: string): Promise<Appointm
   }
 };
 
+
 export const createAppointment = async (
-  providerId: string, // This is provider_profiles.id
+  providerId: string,
   service: string,
   date: string,
   time: string,
@@ -135,22 +124,46 @@ export const createAppointment = async (
     const user = await getCurrentUser();
     if (!user) throw new Error('User not authenticated');
 
-    const { data: clientProfile, error: profileError } = await supabase
+    // Fetch client profile
+    const { data: clientProfile, error: clientProfileError } = await supabase
       .from('client_profiles')
-      .select('id')
+      .select('id, user_id') // Include user_id
       .eq('user_id', user.id)
       .single();
 
-    if (profileError) {
-      console.error('Error getting client profile:', profileError);
-      throw profileError;
+    if (clientProfileError) {
+      console.error('Error getting client profile:', clientProfileError);
+      throw clientProfileError;
     }
     if (!clientProfile) {
       console.error('Client profile not found');
       throw new Error('Client profile not found');
     }
 
-    console.log('Creating appointment with client_id:', clientProfile.id);
+    // Fetch provider profile to get user_id
+    const { data: providerProfile, error: providerProfileError } = await supabase
+      .from('provider_profiles')
+      .select('user_id')
+      .eq('id', providerId)
+      .single();
+
+    if (providerProfileError) {
+      console.error('Error getting provider profile:', providerProfileError);
+      throw providerProfileError;
+    }
+    if (!providerProfile) {
+      console.error('Provider profile not found');
+      throw new Error('Provider profile not found');
+    }
+
+    let videoCallRoomId: string | null = null;
+    if (method === 'video') {
+      // Use user_id values for client and provider
+      videoCallRoomId = await startVideoCall(clientProfile.user_id, providerProfile.user_id);
+      if (!videoCallRoomId) {
+        throw new Error('Failed to create video call room');
+      }
+    }
 
     const { data, error } = await supabase
       .from('appointments')
@@ -161,10 +174,11 @@ export const createAppointment = async (
         date,
         time,
         status: 'pending',
-        method
+        method,
+        video_call_room_id: videoCallRoomId
       })
       .select()
-      .single(); // Return the inserted appointment
+      .single();
 
     if (error) {
       console.error('Supabase error creating appointment:', error);
@@ -175,14 +189,14 @@ export const createAppointment = async (
 
     // Create a lead for this appointment
     const leadCreated = await createLeadFromAppointment(data, providerId);
-        console.log('Lead created:', leadCreated);
+    console.log('Lead created:', leadCreated);
 
-        return true;
-      } catch (error) {
-        console.error('Error creating appointment:', error);
-        return false;
-      }
-    };
+    return true;
+  } catch (error) {
+    console.error('Error creating appointment:', error);
+    return false;
+  }
+};
 
 export const cancelAppointment = async (appointmentId: string): Promise<boolean> => {
   try {
@@ -198,6 +212,9 @@ export const cancelAppointment = async (appointmentId: string): Promise<boolean>
     return false;
   }
 };
+
+
+
 
 // Optional: Real-time subscription for appointments (if needed elsewhere)
 export const subscribeToAppointments = (providerId: string, callback: (appointment: any) => void) => {

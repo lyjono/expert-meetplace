@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
@@ -11,44 +10,52 @@ import { supabase } from "@/lib/supabase";
 import { getProviderAppointments, Appointment, cancelAppointment } from "@/services/appointments";
 import AvailabilityManager from "@/components/provider/AvailabilityManager";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import VideoCall from "@/components/VideoCall";
+import { joinVideoCall } from "@/services/realTimeMessages";
+import { getCurrentUser } from "@/lib/supabase";
 
 const Appointments = () => {
   const [providerId, setProviderId] = useState<string | null>(null);
-  
+  const [isVideoCallActive, setIsVideoCallActive] = useState(false);
+  const [videoCallRoom, setVideoCallRoom] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchProviderId = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
-        
+        setCurrentUserId(user.id);
+
         const { data, error } = await supabase
           .from('provider_profiles')
           .select('id')
           .eq('user_id', user.id)
           .single();
-          
+
         if (error) throw error;
         setProviderId(data?.id || null);
       } catch (error) {
         console.error('Error fetching provider ID:', error);
       }
     };
-    
+
     fetchProviderId();
   }, []);
-  
+
   const { data: upcomingAppointments = [], isLoading: isLoadingUpcoming } = useQuery({
     queryKey: ['providerAppointments', 'upcoming'],
     queryFn: () => getProviderAppointments('pending,confirmed'),
     enabled: true,
   });
-  
+
   const { data: pastAppointments = [], isLoading: isLoadingPast } = useQuery({
     queryKey: ['providerAppointments', 'past'],
     queryFn: () => getProviderAppointments('completed'),
     enabled: true,
   });
-  
+
   const { data: canceledAppointments = [], isLoading: isLoadingCanceled } = useQuery({
     queryKey: ['providerAppointments', 'canceled'],
     queryFn: () => getProviderAppointments('canceled'),
@@ -59,12 +66,34 @@ const Appointments = () => {
     const result = await cancelAppointment(id);
     if (result) {
       toast.success("Appointment canceled successfully");
-      // Force refetch
       window.location.reload();
     } else {
       toast.error("Failed to cancel appointment");
     }
   };
+
+  const handleJoinVideoCall = async (roomId: string) => {
+    try {
+      await joinVideoCall(roomId);
+      setVideoCallRoom(roomId);
+      setIsVideoCallActive(true);
+    } catch (error) {
+      console.error('Error joining video call:', error);
+      toast.error('Failed to join video call');
+    }
+  };
+
+  const handleEndVideoCall = () => {
+    setIsVideoCallActive(false);
+    setVideoCallRoom(null);
+  };
+
+  // Combine all appointments for searching
+  const allAppointments = [
+    ...upcomingAppointments,
+    ...pastAppointments,
+    ...canceledAppointments
+  ];
 
   return (
     <DashboardLayout userType="provider">
@@ -99,6 +128,7 @@ const Appointments = () => {
                   key={appointment.id} 
                   appointment={appointment} 
                   onCancel={() => handleCancelAppointment(appointment.id)}
+                  onJoinVideoCall={() => handleJoinVideoCall(appointment.video_call_room_id!)}
                 />
               ))
             )}
@@ -131,6 +161,27 @@ const Appointments = () => {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={isVideoCallActive} onOpenChange={setIsVideoCallActive}>
+        <DialogContent className="sm:max-w-[800px] h-[600px]">
+          <DialogHeader>
+            <DialogTitle>
+              Video Call with {allAppointments.find(a => a.video_call_room_id === videoCallRoom)?.client || 'Client'}
+            </DialogTitle>
+          </DialogHeader>
+          {videoCallRoom && currentUserId ? (
+            <VideoCall 
+              roomId={videoCallRoom} 
+              userName={currentUserId}
+              onEndCall={handleEndVideoCall}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p>Video call connection failed. Please try again.</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };
@@ -138,9 +189,10 @@ const Appointments = () => {
 interface AppointmentCardProps {
   appointment: Appointment;
   onCancel?: () => void;
+  onJoinVideoCall?: () => void;
 }
 
-const AppointmentCard = ({ appointment, onCancel }: AppointmentCardProps) => {
+const AppointmentCard = ({ appointment, onCancel, onJoinVideoCall }: AppointmentCardProps) => {
   const getStatusVariant = (status: string) => {
     switch(status) {
       case 'confirmed': return 'default';
@@ -188,8 +240,8 @@ const AppointmentCard = ({ appointment, onCancel }: AppointmentCardProps) => {
         <div className="flex flex-wrap gap-2">
           {(appointment.status === "confirmed" || appointment.status === "pending") && (
             <>
-              {appointment.method === "video" && (
-                <Button size="sm">
+              {appointment.method === "video" && appointment.video_call_room_id && (
+                <Button size="sm" onClick={onJoinVideoCall}>
                   <Video className="mr-2 h-4 w-4" />
                   Join Meeting
                 </Button>

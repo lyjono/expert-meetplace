@@ -3,10 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, MessageSquare, Users, FileText, DollarSign } from "lucide-react";
+import { Calendar, MessageSquare, Users, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { getLeadCounts } from "@/services/leads";
+import { getSharedDocuments } from "@/services/documents"; // From Documents.tsx
+import { toast } from "sonner";
 
 // Fetch authenticated provider's details
 const getAuthenticatedProvider = async () => {
@@ -28,8 +30,7 @@ const getAuthenticatedProvider = async () => {
   if (userTypeError) throw userTypeError;
   if (userTypeData.user_type !== "provider") throw new Error("User is not a provider");
 
-  console.log('Authenticated Provider ID:', data.id); // Debug log
-  return { providerId: data.id, providerName: data.name };
+  return { providerId: data.id, providerName: data.name, userId: authData.user.id };
 };
 
 const ProviderDashboard = () => {
@@ -40,6 +41,7 @@ const ProviderDashboard = () => {
   });
 
   const providerId = providerData?.providerId;
+  const userId = providerData?.userId;
 
   // Query for today's appointments with client names
   const { data: appointments = [], isLoading: isLoadingAppointments } = useQuery({
@@ -59,30 +61,45 @@ const ProviderDashboard = () => {
     enabled: !!providerId,
   });
 
-  // Query for unread messages
+  // Query for unread messages (fixed to use userId)
   const { data: unreadMessages = [], isLoading: isLoadingUnread } = useQuery({
-    queryKey: ["unreadMessages", providerId],
+    queryKey: ["unreadMessages", userId],
     queryFn: async () => {
-      if (!providerId) return [];
+      if (!userId) return [];
       const { data, error } = await supabase
         .from("messages")
         .select("id")
-        .eq("receiver_id", providerId)
+        .eq("receiver_id", userId)
         .eq("read", false);
       if (error) throw error;
       return data;
     },
-    enabled: !!providerId,
+    enabled: !!userId,
   });
   const unreadCount = unreadMessages.length;
 
-  // Query for lead counts using leads.ts
+  // Query for lead counts
   const { data: leadCounts = { new: 0, contacted: 0, qualified: 0, converted: 0 }, isLoading: isLoadingLeads } = useQuery({
     queryKey: ["leadCounts", providerId],
     queryFn: () => getLeadCounts(providerId),
     enabled: !!providerId,
   });
   const totalLeads = Object.values(leadCounts).reduce((sum, count) => sum + count, 0);
+
+  // Query for shared documents
+  const { data: sharedDocuments = [], isLoading: isLoadingDocuments } = useQuery({
+    queryKey: ["sharedDocuments", userId],
+    queryFn: async () => {
+      if (!userId) return [];
+      return await getSharedDocuments();
+    },
+    enabled: !!userId,
+  });
+
+  // Calculate documents requiring review (placeholder logic)
+  const documentsToReview = sharedDocuments.filter(
+    (doc: any) => doc.status === "pending_review" // Adjust based on schema
+  ).length;
 
   // Calculate next appointment time
   const now = new Date();
@@ -95,16 +112,13 @@ const ProviderDashboard = () => {
   const nextAppointment = upcomingAppointments[0];
   const timeUntilNext = nextAppointment ? calculateTimeUntil(nextAppointment.time) : null;
 
-  function calculateTimeUntil(time) {
+  function calculateTimeUntil(time: string) {
     const [hours, minutes] = time.split(":").map(Number);
     const apptDate = new Date(now);
     apptDate.setHours(hours, minutes, 0, 0);
-    const diff = apptDate - now;
+    const diff = apptDate.getTime() - now.getTime();
     return diff > 0 ? `${Math.floor(diff / 60000)} minutes` : "Now";
   }
-
-  // Mock revenue (replace with real calculation if data available)
-  const revenue = 2450; // TODO: Calculate from completed appointments
 
   if (isLoadingProvider) return <div>Loading provider data...</div>;
   if (providerError) return <div>Error: {providerError.message}</div>;
@@ -159,12 +173,18 @@ const ProviderDashboard = () => {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Shared Documents</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${revenue}</div>
-            <p className="text-xs text-muted-foreground">+12% from last month</p>
+            <div className="text-2xl font-bold">{isLoadingDocuments ? "..." : sharedDocuments.length}</div>
+            <p className="text-xs text-muted-foreground">
+              {isLoadingDocuments
+                ? "Loading..."
+                : documentsToReview > 0
+                ? `${documentsToReview} documents require review`
+                : "No documents pending review"}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -181,11 +201,11 @@ const ProviderDashboard = () => {
             ) : appointments.length === 0 ? (
               <p>No appointments today</p>
             ) : (
-              appointments.slice(0, 3).map((appt) => (
+              appointments.slice(0, 3).map((appt: any) => (
                 <div key={appt.id} className="flex justify-between items-center p-3 bg-accent/50 rounded-md">
                   <div>
                     <div className="font-medium">{appt.client?.name || "Unknown Client"}</div>
-                    <div className="text-sm text-muted-foreground">{appt.service}</div>
+                    <div className="text-sm text-muted-foreground">{appt.service || "Service"}</div>
                   </div>
                   <div className="text-sm font-medium">{appt.time}</div>
                 </div>

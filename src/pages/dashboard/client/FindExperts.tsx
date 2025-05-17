@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
@@ -11,10 +10,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search } from "lucide-react";
 import { Expert, searchExperts, getRecommendedExperts } from "@/services/experts";
 import { toast } from "sonner";
+import citiesData from "../../../data/cities.json";
+import countriesData from "../../../data/countries.json";
 
 const FindExperts = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState("");
+  const [country, setCountry] = useState(""); // ISO2 code, e.g., "US"
+  const [city, setCity] = useState("");
+  const [citySearch, setCitySearch] = useState(""); // For searchable input
+  const [citySuggestions, setCitySuggestions] = useState([]);
   const [experts, setExperts] = useState<Expert[]>([]);
   const [recommendedExperts, setRecommendedExperts] = useState<Expert[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,10 +39,34 @@ const FindExperts = () => {
     loadRecommendedExperts();
   }, []);
 
+  // Filter cities based on country and search input
+  const handleCitySearch = (input: string) => {
+    setCitySearch(input);
+    if (input.length < 2 || !country) {
+      setCitySuggestions([]);
+      return;
+    }
+    const filteredCities = citiesData
+      .filter(
+        (c) =>
+          c.country_code === country &&
+          c.name.toLowerCase().includes(input.toLowerCase())
+      )
+      .slice(0, 10); // Limit to 10 suggestions for performance
+    setCitySuggestions(filteredCities);
+  };
+
+  // Handle city selection from suggestions
+  const handleCitySelect = (selectedCity: { id: string; name: string; country_code: string }) => {
+    setCity(selectedCity.name);
+    setCitySearch(selectedCity.name);
+    setCitySuggestions([]);
+  };
+
   const handleSearch = async () => {
     setIsLoading(true);
     try {
-      const results = await searchExperts(searchTerm, category);
+      const results = await searchExperts(searchTerm, category, city);
       setExperts(results);
       if (results.length === 0) {
         toast.info("No experts found matching your criteria");
@@ -65,13 +94,13 @@ const FindExperts = () => {
             <CardTitle>Search for Experts</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-5">
               <div className="md:col-span-2">
                 <div className="relative">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    className="pl-10" 
-                    placeholder="Search experts by name or specialty" 
+                  <Input
+                    className="pl-10"
+                    placeholder="Search experts by name or specialty"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -93,9 +122,43 @@ const FindExperts = () => {
                 </Select>
               </div>
               <div>
-                <Button 
-                  className="w-full" 
-                  onClick={handleSearch} 
+                <Select value={country} onValueChange={setCountry}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Country" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {countriesData.map((c) => (
+                      <SelectItem key={c.iso2} value={c.iso2}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="relative">
+                <Input
+                  placeholder="Type your city..."
+                  value={citySearch}
+                  onChange={(e) => handleCitySearch(e.target.value)}
+                />
+                {citySuggestions.length > 0 && (
+                  <ul className="absolute z-10 w-full bg-white border rounded-md shadow-lg max-h-40 overflow-auto mt-1">
+                    {citySuggestions.map((c) => (
+                      <li
+                        key={c.id}
+                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                        onClick={() => handleCitySelect(c)}
+                      >
+                        {c.name}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <Button
+                  className="w-full"
+                  onClick={handleSearch}
                   disabled={isLoading}
                 >
                   {isLoading ? "Searching..." : "Search"}
@@ -125,7 +188,9 @@ const FindExperts = () => {
               <ExpertCard key={expert.id} expert={expert} />
             ))
           ) : (
-            <p className="text-muted-foreground col-span-3">Loading recommended experts...</p>
+            <p className="text-muted-foreground col-span-3">
+              Loading recommended experts...
+            </p>
           )}
         </div>
       </div>
@@ -142,7 +207,10 @@ const ExpertCard = ({ expert }: { expert: Expert }) => {
   };
 
   return (
-    <Card className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow" onClick={handleViewProfile}>
+    <Card
+      className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+      onClick={handleViewProfile}
+    >
       <div className="p-6">
         <div className="flex items-center gap-4">
           <Avatar className="h-12 w-12">
@@ -157,7 +225,8 @@ const ExpertCard = ({ expert }: { expert: Expert }) => {
         <div className="mt-4 flex items-center justify-between">
           <Badge variant="secondary">{expert.category}</Badge>
           <div className="text-sm">
-            ★ {expert.rating} <span className="text-muted-foreground">(120+ reviews)</span>
+            ★ {expert.rating}{" "}
+            <span className="text-muted-foreground">(120+ reviews)</span>
           </div>
         </div>
         <Button className="w-full mt-4">View Profile</Button>

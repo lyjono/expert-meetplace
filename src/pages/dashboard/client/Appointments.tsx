@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,21 +7,37 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar as CalendarIcon, Video, MessageSquare, Clock } from "lucide-react";
 import { Appointment, getClientAppointments, cancelAppointment } from "@/services/appointments";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import VideoCall from "@/components/VideoCall"; // Import VideoCall component
+import { joinVideoCall } from "@/services/realTimeMessages"; // Import joinVideoCall
+import { getCurrentUser } from "@/lib/supabase";
 
 const ClientAppointments = () => {
   const [activeTab, setActiveTab] = useState("upcoming");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isVideoCallActive, setIsVideoCallActive] = useState(false);
+  const [videoCallRoom, setVideoCallRoom] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      const user = await getCurrentUser();
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+    };
+    fetchCurrentUser();
+  }, []);
 
   const loadAppointments = async (status?: string) => {
     setIsLoading(true);
     try {
-      // Map UI tab value to database status values
       let statusFilter;
       if (status === "upcoming") statusFilter = "confirmed,pending";
       else if (status === "past") statusFilter = "completed";
       else if (status === "canceled") statusFilter = "canceled";
-      
+
       const data = await getClientAppointments(statusFilter);
       setAppointments(data);
     } catch (error) {
@@ -33,7 +48,6 @@ const ClientAppointments = () => {
     }
   };
 
-  // Load appointments when tab changes
   useEffect(() => {
     loadAppointments(activeTab);
   }, [activeTab]);
@@ -44,7 +58,6 @@ const ClientAppointments = () => {
         const success = await cancelAppointment(appointmentId);
         if (success) {
           toast.success("Appointment canceled successfully");
-          // Refresh the appointments list
           loadAppointments(activeTab);
         } else {
           toast.error("Failed to cancel appointment");
@@ -54,6 +67,22 @@ const ClientAppointments = () => {
         toast.error("An error occurred while canceling the appointment");
       }
     }
+  };
+
+  const handleJoinVideoCall = async (roomId: string) => {
+    try {
+      await joinVideoCall(roomId);
+      setVideoCallRoom(roomId);
+      setIsVideoCallActive(true);
+    } catch (error) {
+      console.error('Error joining video call:', error);
+      toast.error('Failed to join video call');
+    }
+  };
+
+  const handleEndVideoCall = () => {
+    setIsVideoCallActive(false);
+    setVideoCallRoom(null);
   };
 
   return (
@@ -87,6 +116,7 @@ const ClientAppointments = () => {
                     key={appointment.id} 
                     appointment={appointment} 
                     onCancel={() => handleCancelAppointment(appointment.id)}
+                    onJoinVideoCall={() => handleJoinVideoCall(appointment.video_call_room_id!)}
                   />
                 ))
               ) : (
@@ -118,17 +148,37 @@ const ClientAppointments = () => {
           </div>
         </Tabs>
       </div>
+
+      <Dialog open={isVideoCallActive} onOpenChange={setIsVideoCallActive}>
+        <DialogContent className="sm:max-w-[800px] h-[600px]">
+          <DialogHeader>
+            <DialogTitle>Video Call with {appointments.find(a => a.video_call_room_id === videoCallRoom)?.expert}</DialogTitle>
+          </DialogHeader>
+          {videoCallRoom && currentUserId ? (
+            <VideoCall 
+              roomId={videoCallRoom} 
+              userName={currentUserId}
+              onEndCall={handleEndVideoCall}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p>Video call connection failed. Please try again.</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };
 
-// Appointment card components
 const AppointmentCard = ({ 
   appointment, 
-  onCancel 
+  onCancel,
+  onJoinVideoCall
 }: { 
   appointment: Appointment, 
-  onCancel: () => void 
+  onCancel: () => void,
+  onJoinVideoCall: () => void
 }) => (
   <Card>
     <CardContent className="p-6">
@@ -161,8 +211,8 @@ const AppointmentCard = ({
           >
             {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
           </Badge>
-          {appointment.method === "video" && (
-            <Button variant="outline" className="gap-2">
+          {appointment.method === "video" && appointment.video_call_room_id && (
+            <Button variant="outline" className="gap-2" onClick={onJoinVideoCall}>
               <Video className="h-4 w-4" /> Join Call
             </Button>
           )}

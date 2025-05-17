@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/supabase";
+import { v4 as uuidv4 } from "uuid";
 
 interface ProviderProfileData {
   name: string;
@@ -43,6 +44,7 @@ const ProviderProfile = () => {
   const [expertise, setExpertise] = useState<string[]>([]);
   const [bio, setBio] = useState("");
   const [education, setEducation] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   // Define fetchProfile as a reusable function
   const fetchProfile = useCallback(async () => {
@@ -134,6 +136,77 @@ const ProviderProfile = () => {
     );
   }
 
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true);
+      const user = await getCurrentUser();
+      if (!user) throw new Error("No user logged in");
+
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      // Generate unique file name
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${uuidv4()}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
+
+      // Upload to Supabase storage
+      const { error: uploadError } = await supabase.storage
+        .from('provider-images') // Ensure this bucket exists in Supabase
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('provider-images')
+        .getPublicUrl(filePath);
+
+      // Update profile with new image URL
+      const { error: updateError } = await supabase
+        .from('provider_profiles')
+        .update({ image_url: urlData.publicUrl })
+        .eq('user_id', user.id);
+
+      if (updateError) throw updateError;
+
+      // Refresh profile
+      await fetchProfile();
+      toast.success('Profile picture updated');
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      toast.error('Failed to update profile picture');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    try {
+      const user = await getCurrentUser();
+      if (!user) throw new Error("No user logged in");
+
+      // Update profile to remove image URL
+      const { error } = await supabase
+        .from('provider_profiles')
+        .update({ image_url: null })
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      // Refresh profile
+      await fetchProfile();
+      toast.success('Profile picture removed');
+    } catch (error) {
+      console.error('Error removing image:', error);
+      toast.error('Failed to remove profile picture');
+    }
+  };
+
+
+
+  
   return (
     <DashboardLayout userType="provider">
       <div className="grid gap-4">
@@ -156,8 +229,26 @@ const ProviderProfile = () => {
                 <AvatarFallback>{(firstName[0] + lastName[0]).toUpperCase()}</AvatarFallback>
               </Avatar>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm">Change Photo</Button>
-                <Button variant="outline" size="sm">Remove</Button>
+                <Button variant="outline" size="sm" disabled={uploading} asChild>
+                  <label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageUpload}
+                      disabled={uploading}
+                    />
+                    {uploading ? 'Uploading...' : 'Change Photo'}
+                  </label>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRemovePhoto}
+                  disabled={uploading || !profile?.image_url}
+                >
+                  Remove
+                </Button>
               </div>
             </CardContent>
           </Card>
