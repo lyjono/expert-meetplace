@@ -192,8 +192,6 @@ interface AppointmentCardProps {
   onJoinVideoCall?: () => void;
 }
 
-import { ClientNotes } from "@/components/provider/ClientNotes";
-
 const AppointmentCard = ({ appointment, onCancel, onJoinVideoCall }: AppointmentCardProps) => {
   const getStatusVariant = (status: string) => {
     switch(status) {
@@ -264,9 +262,6 @@ const AppointmentCard = ({ appointment, onCancel, onJoinVideoCall }: Appointment
           )}
         </div>
       </CardContent>
-      <div className="px-6 pb-6">
-        <ClientNotes clientId={appointment.client_id} providerId={appointment.provider_id} />
-      </div>
     </Card>
   );
 };

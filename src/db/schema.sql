@@ -51,28 +51,6 @@ CREATE TABLE messages (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Client notes table
-CREATE TABLE client_notes (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  provider_id UUID REFERENCES provider_profiles(id) NOT NULL,
-  client_id UUID REFERENCES client_profiles(id) NOT NULL,
-  content TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Add security policies for client notes
-ALTER TABLE client_notes ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Providers can manage their own notes"
-  ON client_notes
-  USING (
-    EXISTS (
-      SELECT 1 FROM provider_profiles
-      WHERE user_id = auth.uid() AND id = provider_id
-    )
-  );
-
 -- Documents table
 CREATE TABLE documents (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
