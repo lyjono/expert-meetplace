@@ -429,9 +429,9 @@ const PublicBooking = () => {
               </SelectTrigger>
               <SelectContent>
                 {!date ? (
-                  <SelectItem value="" disabled>Please select a date first</SelectItem>
+                  <SelectItem value="__placeholder_date__" disabled>Please select a date first</SelectItem>
                 ) : availableTimes.length === 0 ? (
-                  <SelectItem value="" disabled>No available times for this date</SelectItem>
+                  <SelectItem value="__placeholder_no_times__" disabled>No available times for this date</SelectItem>
                 ) : (
                   availableTimes.map((time) => {
                     // Convert 24-hour format to 12-hour format for display
