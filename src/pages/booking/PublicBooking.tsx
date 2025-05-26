@@ -460,12 +460,14 @@ const PublicBooking = () => {
             <Label>Meeting Method</Label>
             <div className="flex items-center space-x-2">
               <Button
+                type="button"
                 variant={method === 'video' ? 'default' : 'outline'}
                 onClick={() => setMethod('video')}
               >
                 Video Call
               </Button>
               <Button
+                type="button"
                 variant={method === 'in-person' ? 'default' : 'outline'}
                 onClick={() => setMethod('in-person')}
               >
