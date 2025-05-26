@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -27,6 +26,7 @@ import ProviderMessages from "./pages/dashboard/provider/Messages";
 import ProviderDocuments from "./pages/dashboard/provider/Documents";
 import ProviderProfile from "./pages/dashboard/provider/Profile";
 import ProviderSettings from "./pages/dashboard/provider/Settings";
+import PublicBooking from "@/pages/booking/PublicBooking";
 
 const queryClient = new QueryClient();
 
@@ -38,14 +38,14 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
-          
+
           {/* Auth routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          
+
           {/* Dashboard routes */}
           <Route path="/dashboard" element={<DashboardRedirect />} />
-          
+
           {/* Client dashboard routes */}
           <Route path="/dashboard/client" element={<ClientDashboard />} />
           <Route path="/dashboard/find-experts" element={<FindExperts />} />
@@ -55,7 +55,7 @@ const App = () => (
           <Route path="/dashboard/profile" element={<ClientProfile />} />
           <Route path="/dashboard/settings" element={<ClientSettings />} />
           <Route path="/dashboard/expert/:expertId" element={<ExpertProfile />} />
-          
+
           {/* Provider dashboard routes */}
           <Route path="/dashboard/provider" element={<ProviderDashboard />} />
           <Route path="/dashboard/provider/leads" element={<ProviderLeads />} />
@@ -64,15 +64,16 @@ const App = () => (
           <Route path="/dashboard/provider/documents" element={<ProviderDocuments />} />
           <Route path="/dashboard/provider/profile" element={<ProviderProfile />} />
           <Route path="/dashboard/provider/settings" element={<ProviderSettings />} />
-          
+          <Route path="/book/:providerId" element={<PublicBooking />} />
+
           {/* Service routes */}
           <Route path="/services/:serviceType" element={<ServicesPage />} />
-          
+
           {/* Other main routes */}
           <Route path="/how-it-works" element={<HowItWorksPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/privacy" element={<NotFound />} />
-          
+
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

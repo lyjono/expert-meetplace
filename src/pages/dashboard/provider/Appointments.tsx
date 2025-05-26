@@ -4,6 +4,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar as CalendarIcon, Clock, Video, MessageSquare } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -14,12 +15,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import VideoCall from "@/components/VideoCall";
 import { joinVideoCall } from "@/services/realTimeMessages";
 import { getCurrentUser } from "@/lib/supabase";
+import { Share, Copy, CheckIcon } from "lucide-react";
 
 const Appointments = () => {
   const [providerId, setProviderId] = useState<string | null>(null);
   const [isVideoCallActive, setIsVideoCallActive] = useState(false);
   const [videoCallRoom, setVideoCallRoom] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [bookingLinkCopied, setBookingLinkCopied] = useState(false);
 
   useEffect(() => {
     const fetchProviderId = async () => {
@@ -88,6 +91,25 @@ const Appointments = () => {
     setVideoCallRoom(null);
   };
 
+  const handleCopyBookingLink = async () => {
+    if (!providerId) return;
+    
+    const bookingUrl = `${window.location.origin}/book/${providerId}`;
+    
+    try {
+      await navigator.clipboard.writeText(bookingUrl);
+      setBookingLinkCopied(true);
+      toast.success("Booking link copied to clipboard!");
+      
+      setTimeout(() => {
+        setBookingLinkCopied(false);
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to copy link:", error);
+      toast.error("Failed to copy link");
+    }
+  };
+
   // Combine all appointments for searching
   const allAppointments = [
     ...upcomingAppointments,
@@ -103,6 +125,37 @@ const Appointments = () => {
           Manage your schedule and client appointments.
         </p>
       </div>
+
+      {/* Shareable Booking Link */}
+      {providerId && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Share className="h-5 w-5" />
+              Share Your Booking Link
+            </CardTitle>
+            <CardDescription>
+              Share this link with potential clients so they can book appointments directly with you.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <Input 
+                readOnly 
+                value={`${window.location.origin}/book/${providerId}`}
+                className="flex-1"
+              />
+              <Button onClick={handleCopyBookingLink} variant="outline" size="icon">
+                {bookingLinkCopied ? (
+                  <CheckIcon className="h-4 w-4 text-green-600" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {providerId && (
         <div className="mt-6 mb-8">
