@@ -32,11 +32,25 @@ const PublicBooking = () => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
-      const user = await getCurrentUser();
-      setIsAuthenticated(!!user);
+      try {
+        const user = await getCurrentUser();
+        setIsAuthenticated(!!user);
+        
+        // Check if user exists but email is not confirmed
+        if (user && !user.email_confirmed_at) {
+          setAuthError('Please check your email and click the verification link to complete your account setup.');
+        }
+      } catch (error: any) {
+        console.error('Auth check error:', error);
+        if (error.message?.includes('Auth session missing')) {
+          setAuthError('Your session has expired. Please sign in again.');
+        }
+        setIsAuthenticated(false);
+      }
     };
 
     const fetchProvider = async () => {
@@ -66,11 +80,29 @@ const PublicBooking = () => {
 
     checkAuth();
     fetchProvider();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        setIsAuthenticated(true);
+        setAuthError(null);
+        setShowAuthDialog(false);
+        toast.success('Successfully signed in!');
+      } else if (event === 'SIGNED_OUT') {
+        setIsAuthenticated(false);
+        setAuthError('Your session has expired. Please sign in again.');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [providerId, navigate]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthLoading(true);
+    setAuthError(null);
 
     try {
       if (authMode === 'register') {
@@ -97,11 +129,19 @@ const PublicBooking = () => {
               email
             });
 
-          if (profileError) throw profileError;
+          if (profileError && profileError.code !== '23505') { // Ignore duplicate key errors
+            throw profileError;
+          }
 
-          toast.success('Account created successfully!');
-          setIsAuthenticated(true);
-          setShowAuthDialog(false);
+          if (data.user.email_confirmed_at) {
+            toast.success('Account created and verified! You can now book appointments.');
+            setIsAuthenticated(true);
+            setShowAuthDialog(false);
+          } else {
+            toast.success('Account created! Please check your email and click the verification link before booking.');
+            setAuthError('Please check your email and click the verification link to complete your account setup.');
+            setShowAuthDialog(false);
+          }
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -109,17 +149,48 @@ const PublicBooking = () => {
           password
         });
 
-        if (error) throw error;
+        if (error) {
+          if (error.message.includes('Email not confirmed')) {
+            setAuthError('Please check your email and click the verification link to complete your account setup.');
+            toast.error('Please verify your email address before signing in.');
+          } else if (error.message.includes('Invalid login credentials')) {
+            toast.error('Invalid email or password. Please check your credentials and try again.');
+          } else {
+            toast.error(error.message);
+          }
+          throw error;
+        }
 
-        toast.success('Logged in successfully!');
+        if (data.user && !data.user.email_confirmed_at) {
+          setAuthError('Please check your email and click the verification link to complete your account setup.');
+          toast.error('Please verify your email address before booking appointments.');
+          return;
+        }
+
+        toast.success('Signed in successfully!');
         setIsAuthenticated(true);
         setShowAuthDialog(false);
       }
     } catch (error: any) {
       console.error('Auth error:', error);
-      toast.error(error.message || 'Authentication failed');
+      // Error handling is done above for specific cases
     } finally {
       setAuthLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email
+      });
+
+      if (error) throw error;
+      toast.success('Verification email sent! Please check your inbox.');
+    } catch (error: any) {
+      console.error('Resend error:', error);
+      toast.error('Failed to resend verification email. Please try again.');
     }
   };
 
@@ -128,6 +199,12 @@ const PublicBooking = () => {
 
     if (!isAuthenticated) {
       setShowAuthDialog(true);
+      return;
+    }
+
+    // Check for auth error (like unverified email)
+    if (authError) {
+      toast.error('Please complete account verification before booking appointments.');
       return;
     }
 
@@ -153,9 +230,16 @@ const PublicBooking = () => {
       } else {
         toast.error('Failed to book appointment. Please try again.');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error booking appointment:', error);
-      toast.error('Failed to book appointment. Please try again.');
+      
+      if (error.message?.includes('User not authenticated')) {
+        setAuthError('Your session has expired. Please sign in again.');
+        setIsAuthenticated(false);
+        toast.error('Please sign in again to book your appointment.');
+      } else {
+        toast.error('Failed to book appointment. Please try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -247,11 +331,27 @@ const PublicBooking = () => {
             </div>
           </div>
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? 'Booking...' : isAuthenticated ? 'Book Appointment' : 'Continue to Book'}
+          <Button type="submit" className="w-full" disabled={isSubmitting || !!authError}>
+            {isSubmitting ? 'Booking...' : isAuthenticated && !authError ? 'Book Appointment' : 'Continue to Book'}
           </Button>
 
-          {!isAuthenticated && (
+          {authError && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-4">
+              <p className="text-sm text-yellow-800 mb-2">{authError}</p>
+              {authError.includes('verification') && email && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleResendVerification}
+                  className="text-yellow-800 border-yellow-300 hover:bg-yellow-100"
+                >
+                  Resend Verification Email
+                </Button>
+              )}
+            </div>
+          )}
+
+          {!isAuthenticated && !authError && (
             <p className="text-sm text-muted-foreground text-center mt-2">
               <User className="inline h-4 w-4 mr-1" />
               You'll need to sign in or create an account to book this appointment
@@ -313,11 +413,29 @@ const PublicBooking = () => {
               {authLoading ? 'Please wait...' : authMode === 'login' ? 'Sign In' : 'Create Account'}
             </Button>
 
+            {authError && authMode === 'login' && authError.includes('verification') && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                <p className="text-sm text-yellow-800 mb-2">Account not verified yet?</p>
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleResendVerification}
+                  className="text-yellow-800 border-yellow-300 hover:bg-yellow-100"
+                >
+                  Resend Verification Email
+                </Button>
+              </div>
+            )}
+
             <div className="text-center">
               <Button
                 type="button"
                 variant="link"
-                onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                onClick={() => {
+                  setAuthMode(authMode === 'login' ? 'register' : 'login');
+                  setAuthError(null);
+                }}
               >
                 {authMode === 'login' 
                   ? "Don't have an account? Sign up" 
