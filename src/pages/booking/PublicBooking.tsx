@@ -12,6 +12,7 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { supabase, getCurrentUser } from '@/lib/supabase';
 import { createAppointment } from '@/services/appointments';
+import { getAvailableTimesForDate } from '@/services/availability';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
@@ -36,6 +37,7 @@ const PublicBooking = () => {
   const [verificationEmailCount, setVerificationEmailCount] = useState(0);
   const [lastEmailSent, setLastEmailSent] = useState<number | null>(null);
   const [emailCooldown, setEmailCooldown] = useState(0);
+  const [availableTimes, setAvailableTimes] = useState<string[]>([]);
 
   useEffect(() => {
     // Load email rate limiting data from localStorage
@@ -295,6 +297,28 @@ const PublicBooking = () => {
     }
   };
 
+  const fetchAvailableTimes = async (selectedDate: Date) => {
+    if (!providerId) return;
+    
+    const dateString = format(selectedDate, 'yyyy-MM-dd');
+    const times = await getAvailableTimesForDate(providerId, dateString);
+    setAvailableTimes(times);
+    
+    // Reset selected time if it's no longer available
+    if (selectedTime && !times.includes(selectedTime)) {
+      setSelectedTime('');
+    }
+  };
+
+  // Fetch available times when date changes
+  useEffect(() => {
+    if (date) {
+      fetchAvailableTimes(date);
+    } else {
+      setAvailableTimes([]);
+    }
+  }, [date, providerId]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -399,17 +423,35 @@ const PublicBooking = () => {
 
           <div className="space-y-2">
             <Label htmlFor="time">Select Time</Label>
-            <Select onValueChange={setSelectedTime}>
+            <Select onValueChange={setSelectedTime} value={selectedTime}>
               <SelectTrigger>
-                <SelectValue placeholder="Select a time" />
+                <SelectValue placeholder={date ? "Select a time" : "Please select a date first"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="09:00">9:00 AM</SelectItem>
-                <SelectItem value="10:00">10:00 AM</SelectItem>
-                <SelectItem value="11:00">11:00 AM</SelectItem>
-                <SelectItem value="14:00">2:00 PM</SelectItem>
-                <SelectItem value="15:00">3:00 PM</SelectItem>
-                <SelectItem value="16:00">4:00 PM</SelectItem>
+                {!date ? (
+                  <SelectItem value="" disabled>Please select a date first</SelectItem>
+                ) : availableTimes.length === 0 ? (
+                  <SelectItem value="" disabled>No available times for this date</SelectItem>
+                ) : (
+                  availableTimes.map((time) => {
+                    // Convert 24-hour format to 12-hour format for display
+                    const [hours, minutes] = time.split(':');
+                    const hour = parseInt(hours);
+                    const displayTime = hour > 12 
+                      ? `${hour - 12}:${minutes} PM`
+                      : hour === 12 
+                        ? `12:${minutes} PM`
+                        : hour === 0
+                          ? `12:${minutes} AM`
+                          : `${hour}:${minutes} AM`;
+                    
+                    return (
+                      <SelectItem key={time} value={time}>
+                        {displayTime}
+                      </SelectItem>
+                    );
+                  })
+                )}
               </SelectContent>
             </Select>
           </div>
