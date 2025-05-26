@@ -33,8 +33,38 @@ const PublicBooking = () => {
   const [name, setName] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [verificationEmailCount, setVerificationEmailCount] = useState(0);
+  const [lastEmailSent, setLastEmailSent] = useState<number | null>(null);
+  const [emailCooldown, setEmailCooldown] = useState(0);
 
   useEffect(() => {
+    // Load email rate limiting data from localStorage
+    const savedCount = localStorage.getItem('verificationEmailCount');
+    const savedTimestamp = localStorage.getItem('lastVerificationEmail');
+    const savedHourTimestamp = localStorage.getItem('verificationHourStart');
+    
+    const now = Date.now();
+    const oneHour = 60 * 60 * 1000; // 1 hour in milliseconds
+    
+    if (savedHourTimestamp && (now - parseInt(savedHourTimestamp)) > oneHour) {
+      // Reset count if more than an hour has passed
+      localStorage.removeItem('verificationEmailCount');
+      localStorage.removeItem('verificationHourStart');
+      setVerificationEmailCount(0);
+    } else if (savedCount) {
+      setVerificationEmailCount(parseInt(savedCount));
+    }
+    
+    if (savedTimestamp) {
+      setLastEmailSent(parseInt(savedTimestamp));
+      const timeSinceLastEmail = now - parseInt(savedTimestamp);
+      const oneMinute = 60 * 1000; // 1 minute in milliseconds
+      
+      if (timeSinceLastEmail < oneMinute) {
+        setEmailCooldown(Math.ceil((oneMinute - timeSinceLastEmail) / 1000));
+      }
+    }
+
     const checkAuth = async () => {
       try {
         const user = await getCurrentUser();
@@ -98,6 +128,27 @@ const PublicBooking = () => {
       subscription.unsubscribe();
     };
   }, [providerId, navigate]);
+
+  // Cooldown timer effect
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (emailCooldown > 0) {
+      interval = setInterval(() => {
+        setEmailCooldown(prev => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [emailCooldown]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,6 +231,21 @@ const PublicBooking = () => {
   };
 
   const handleResendVerification = async () => {
+    const now = Date.now();
+    const oneMinute = 60 * 1000; // 1 minute in milliseconds
+    const oneHour = 60 * 60 * 1000; // 1 hour in milliseconds
+    
+    // Check rate limits
+    if (verificationEmailCount >= 5) {
+      toast.error('You have reached the maximum of 5 verification emails per hour. Please wait before requesting another.');
+      return;
+    }
+    
+    if (lastEmailSent && (now - lastEmailSent) < oneMinute) {
+      toast.error(`Please wait ${Math.ceil((oneMinute - (now - lastEmailSent)) / 1000)} seconds before requesting another email.`);
+      return;
+    }
+
     try {
       const { error } = await supabase.auth.resend({
         type: 'signup',
@@ -187,10 +253,45 @@ const PublicBooking = () => {
       });
 
       if (error) throw error;
+      
+      // Update rate limiting data
+      const newCount = verificationEmailCount + 1;
+      setVerificationEmailCount(newCount);
+      setLastEmailSent(now);
+      setEmailCooldown(60); // 60 seconds cooldown
+      
+      // Save to localStorage
+      localStorage.setItem('verificationEmailCount', newCount.toString());
+      localStorage.setItem('lastVerificationEmail', now.toString());
+      
+      if (!localStorage.getItem('verificationHourStart')) {
+        localStorage.setItem('verificationHourStart', now.toString());
+      }
+      
       toast.success('Verification email sent! Please check your inbox.');
     } catch (error: any) {
       console.error('Resend error:', error);
       toast.error('Failed to resend verification email. Please try again.');
+    }
+  };
+
+  const handleCheckEmailVerification = async () => {
+    try {
+      // Refresh the user session to get updated email verification status
+      const { data, error } = await supabase.auth.refreshSession();
+      
+      if (error) throw error;
+      
+      if (data.user && data.user.email_confirmed_at) {
+        setIsAuthenticated(true);
+        setAuthError(null);
+        toast.success('Email verified successfully! You can now book appointments.');
+      } else {
+        toast.error('Email not yet verified. Please check your email and click the verification link.');
+      }
+    } catch (error: any) {
+      console.error('Email verification check error:', error);
+      toast.error('Failed to check email verification status. Please try again.');
     }
   };
 
@@ -336,17 +437,40 @@ const PublicBooking = () => {
           </Button>
 
           {authError && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-4">
-              <p className="text-sm text-yellow-800 mb-2">{authError}</p>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-4">
+              <p className="text-sm text-yellow-800 mb-3">{authError}</p>
               {authError.includes('verification') && email && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={handleResendVerification}
-                  className="text-yellow-800 border-yellow-300 hover:bg-yellow-100"
-                >
-                  Resend Verification Email
-                </Button>
+                <div className="space-y-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleResendVerification}
+                      disabled={emailCooldown > 0 || verificationEmailCount >= 5}
+                      className="text-yellow-800 border-yellow-300 hover:bg-yellow-100"
+                    >
+                      {emailCooldown > 0 
+                        ? `Resend in ${emailCooldown}s` 
+                        : verificationEmailCount >= 5 
+                          ? 'Limit reached' 
+                          : 'Resend Verification Email'
+                      }
+                    </Button>
+                    <Button 
+                      variant="default" 
+                      size="sm" 
+                      onClick={handleCheckEmailVerification}
+                      className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                    >
+                      Already verified? Click here
+                    </Button>
+                  </div>
+                  {verificationEmailCount > 0 && (
+                    <p className="text-xs text-yellow-700">
+                      Emails sent: {verificationEmailCount}/5 this hour
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -415,16 +539,40 @@ const PublicBooking = () => {
 
             {authError && authMode === 'login' && authError.includes('verification') && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                <p className="text-sm text-yellow-800 mb-2">Account not verified yet?</p>
-                <Button 
-                  type="button"
-                  variant="outline" 
-                  size="sm" 
-                  onClick={handleResendVerification}
-                  className="text-yellow-800 border-yellow-300 hover:bg-yellow-100"
-                >
-                  Resend Verification Email
-                </Button>
+                <p className="text-sm text-yellow-800 mb-3">Account not verified yet?</p>
+                <div className="space-y-2">
+                  <div className="flex flex-col gap-2">
+                    <Button 
+                      type="button"
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleResendVerification}
+                      disabled={emailCooldown > 0 || verificationEmailCount >= 5}
+                      className="text-yellow-800 border-yellow-300 hover:bg-yellow-100"
+                    >
+                      {emailCooldown > 0 
+                        ? `Resend in ${emailCooldown}s` 
+                        : verificationEmailCount >= 5 
+                          ? 'Limit reached' 
+                          : 'Resend Verification Email'
+                      }
+                    </Button>
+                    <Button 
+                      type="button"
+                      variant="default" 
+                      size="sm" 
+                      onClick={handleCheckEmailVerification}
+                      className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                    >
+                      Already verified? Click here
+                    </Button>
+                  </div>
+                  {verificationEmailCount > 0 && (
+                    <p className="text-xs text-yellow-700">
+                      Emails sent: {verificationEmailCount}/5 this hour
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 
