@@ -6,19 +6,20 @@ export interface Lead {
   email: string;
   phone: string | null;
   service: string;
-  status: "new" | "contacted" | "qualified" | "converted";
+  status: "new" | "contacted" | "qualified" | "converted" | "archived";
   date: string;
   message: string | null;
   provider_id: string;
   created_at: string;
   updated_at: string;
+  notes?: string | null; // Add notes field
 }
 
 export const getLeadsByStatus = async (status: string, providerId: string): Promise<Lead[]> => {
   try {
     const { data, error } = await supabase
       .from('leads')
-      .select('*')
+      .select('*, notes') // Include notes in the select
       .eq('status', status)
       .eq('provider_id', providerId);
     if (error) throw error;
@@ -39,6 +40,20 @@ export const updateLeadStatus = async (leadId: string, newStatus: string): Promi
     return true;
   } catch (error) {
     console.error('Error updating lead status:', error);
+    return false;
+  }
+};
+
+export const updateLeadNotes = async (leadId: string, notes: string | null): Promise<boolean> => {
+  try {
+    const { error } = await supabase
+      .from('leads')
+      .update({ notes, updated_at: new Date().toISOString() })
+      .eq('id', leadId);
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error('Error updating lead notes:', error);
     return false;
   }
 };
@@ -83,7 +98,7 @@ export const createLeadFromMessage = async (message: any, providerId: string): P
     const { data: priorAppointments, error: apptError } = await supabase
       .from('appointments')
       .select('id')
-      .eq('client_id', message.sender_id) // Adjust if client_id differs
+      .eq('client_id', message.sender_id)
       .eq('provider_id', providerId);
     if (apptError) throw apptError;
     if (priorAppointments?.length > 0) return true;
@@ -100,6 +115,7 @@ export const createLeadFromMessage = async (message: any, providerId: string): P
         message: message.content,
         provider_id: providerId,
         created_at: new Date().toISOString(),
+        notes: null, // Initialize notes as null
       });
     if (error) throw error;
     return true;
@@ -154,11 +170,26 @@ export const createLeadFromAppointment = async (appointment: any, providerId: st
         message: `Appointment scheduled for ${appointment.time}`,
         provider_id: providerId,
         created_at: new Date().toISOString(),
+        notes: null, // Initialize notes as null
       });
     if (error) throw error;
     return true;
   } catch (error) {
     console.error('Error creating lead from appointment:', error);
+    return false;
+  }
+};
+
+export const archiveLead = async (leadId: string): Promise<boolean> => {
+  try {
+    const { error } = await supabase
+      .from('leads')
+      .update({ status: 'archived', updated_at: new Date().toISOString() })
+      .eq('id', leadId);
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error('Error archiving lead:', error);
     return false;
   }
 };
