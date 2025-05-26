@@ -93,14 +93,14 @@ const Appointments = () => {
 
   const handleCopyBookingLink = async () => {
     if (!providerId) return;
-    
+
     const bookingUrl = `${window.location.origin}/book/${providerId}`;
-    
+
     try {
       await navigator.clipboard.writeText(bookingUrl);
       setBookingLinkCopied(true);
       toast.success("Booking link copied to clipboard!");
-      
+
       setTimeout(() => {
         setBookingLinkCopied(false);
       }, 2000);

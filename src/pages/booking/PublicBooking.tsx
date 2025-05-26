@@ -1,409 +1,334 @@
-
-import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar } from "@/components/ui/calendar";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { CalendarIcon, Clock, Video, MapPin, User, Mail, Phone } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import { getAvailableTimesForDate } from "@/services/availability";
-import { createAppointment } from "@/services/appointments";
-import { toast } from "sonner";
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { CalendarIcon, Clock, User } from 'lucide-react';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { supabase, getCurrentUser } from '@/lib/supabase';
+import { createAppointment } from '@/services/appointments';
+import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const PublicBooking = () => {
   const { providerId } = useParams<{ providerId: string }>();
   const navigate = useNavigate();
-  const [isRegistered, setIsRegistered] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
-  const [selectedTime, setSelectedTime] = useState<string>("");
-  const [selectedMethod, setSelectedMethod] = useState<"video" | "in-person">("video");
-  const [availableTimes, setAvailableTimes] = useState<string[]>([]);
-  const [isBooking, setIsBooking] = useState(false);
-  
-  // Registration form state
-  const [registrationData, setRegistrationData] = useState({
-    name: "",
-    email: "",
-    password: "",
-    phone: ""
-  });
+  const [provider, setProvider] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [date, setDate] = useState<Date>();
+  const [selectedTime, setSelectedTime] = useState<string>('');
+  const [selectedService, setSelectedService] = useState<string>('');
+  const [method, setMethod] = useState<'video' | 'in-person'>('video');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
 
-  // Check if user is already logged in
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUser(user);
-        setIsRegistered(true);
+    const checkAuth = async () => {
+      const user = await getCurrentUser();
+      setIsAuthenticated(!!user);
+    };
+
+    const fetchProvider = async () => {
+      if (!providerId) {
+        toast.error('Provider not found');
+        navigate('/');
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('provider_profiles')
+          .select('*')
+          .eq('id', providerId)
+          .single();
+
+        if (error) throw error;
+        setProvider(data);
+      } catch (error) {
+        console.error('Error fetching provider:', error);
+        toast.error('Provider not found');
+        navigate('/');
+      } finally {
+        setLoading(false);
       }
     };
-    checkUser();
-  }, []);
 
-  // Fetch provider details
-  const { data: provider, isLoading: isLoadingProvider } = useQuery({
-    queryKey: ["provider", providerId],
-    queryFn: async () => {
-      if (!providerId) throw new Error("Provider ID is required");
-      
-      const { data, error } = await supabase
-        .from("provider_profiles")
-        .select("*")
-        .eq("id", providerId)
-        .single();
-      
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!providerId,
-  });
+    checkAuth();
+    fetchProvider();
+  }, [providerId, navigate]);
 
-  // Fetch available times when date is selected
-  useEffect(() => {
-    const fetchAvailableTimes = async () => {
-      if (selectedDate && providerId) {
-        const dateString = selectedDate.toISOString().split('T')[0];
-        const times = await getAvailableTimesForDate(providerId, dateString);
-        setAvailableTimes(times);
-        setSelectedTime(""); // Reset selected time
-      }
-    };
-    
-    fetchAvailableTimes();
-  }, [selectedDate, providerId]);
-
-  const handleRegistration = async (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    setAuthLoading(true);
+
     try {
-      // Register the user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: registrationData.email,
-        password: registrationData.password,
-      });
+      if (authMode === 'register') {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              name,
+              user_type: 'client'
+            }
+          }
+        });
 
-      if (authError) throw authError;
-      
-      if (authData.user) {
-        // Create client profile
-        const { error: profileError } = await supabase
-          .from("client_profiles")
-          .insert({
-            user_id: authData.user.id,
-            name: registrationData.name,
-            email: registrationData.email,
-          });
+        if (error) throw error;
 
-        if (profileError) throw profileError;
+        if (data.user) {
+          // Create client profile
+          const { error: profileError } = await supabase
+            .from('client_profiles')
+            .insert({
+              user_id: data.user.id,
+              name,
+              email
+            });
 
-        setCurrentUser(authData.user);
-        setIsRegistered(true);
-        toast.success("Registration successful! You can now book an appointment.");
+          if (profileError) throw profileError;
+
+          toast.success('Account created successfully!');
+          setIsAuthenticated(true);
+          setShowAuthDialog(false);
+        }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (error) throw error;
+
+        toast.success('Logged in successfully!');
+        setIsAuthenticated(true);
+        setShowAuthDialog(false);
       }
     } catch (error: any) {
-      console.error("Registration error:", error);
-      toast.error(error.message || "Registration failed");
+      console.error('Auth error:', error);
+      toast.error(error.message || 'Authentication failed');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
-  const handleBooking = async () => {
-    if (!selectedDate || !selectedTime || !providerId) {
-      toast.error("Please select a date and time");
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!isAuthenticated) {
+      setShowAuthDialog(true);
       return;
     }
 
-    setIsBooking(true);
-    
+    if (!date || !selectedTime || !selectedService || !providerId) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    setIsSubmitting(true);
+
     try {
-      const dateString = selectedDate.toISOString().split('T')[0];
       const success = await createAppointment(
         providerId,
-        provider?.specialty || "Consultation",
-        dateString,
+        selectedService,
+        format(date, 'yyyy-MM-dd'),
         selectedTime,
-        selectedMethod
+        method
       );
 
       if (success) {
-        toast.success("Appointment booked successfully!");
-        navigate("/dashboard/client/appointments");
+        toast.success('Appointment booked successfully!');
+        navigate('/dashboard');
       } else {
-        toast.error("Failed to book appointment");
+        toast.error('Failed to book appointment. Please try again.');
       }
     } catch (error) {
-      console.error("Booking error:", error);
-      toast.error("Failed to book appointment");
+      console.error('Error booking appointment:', error);
+      toast.error('Failed to book appointment. Please try again.');
     } finally {
-      setIsBooking(false);
+      setIsSubmitting(false);
     }
   };
 
-  const formatTime = (time: string) => {
-    const [hours, minutes] = time.split(':');
-    const hour = parseInt(hours, 10);
-    const period = hour >= 12 ? 'PM' : 'AM';
-    const formattedHour = hour % 12 || 12;
-    return `${formattedHour}:${minutes} ${period}`;
-  };
-
-  if (isLoadingProvider) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p>Loading provider information...</p>
-      </div>
-    );
-  }
-
-  if (!provider) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Provider Not Found</CardTitle>
-            <CardDescription>The provider you're looking for doesn't exist.</CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-background py-8">
-      <div className="container mx-auto max-w-4xl px-4">
-        <div className="grid gap-8 md:grid-cols-2">
-          {/* Provider Information */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-4">
-                {provider.image_url && (
-                  <img
-                    src={provider.image_url}
-                    alt={provider.name}
-                    className="w-16 h-16 rounded-full object-cover"
-                  />
-                )}
-                <div>
-                  <CardTitle className="text-2xl">{provider.name}</CardTitle>
-                  <CardDescription className="text-lg">
-                    {provider.specialty} • {provider.category}
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">
-                    {provider.years_experience} years experience
-                  </Badge>
-                  {provider.rating && (
-                    <Badge variant="outline">
-                      ⭐ {provider.rating}/5
-                    </Badge>
-                  )}
-                </div>
-                <Separator />
-                <div>
-                  <h3 className="font-semibold mb-2">Meeting Options:</h3>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Video className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Video Call Available</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">In-Person Meeting Available</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+    <Card>
+      <CardHeader>
+        <CardTitle>Book Appointment</CardTitle>
+        <CardDescription>Schedule your appointment with ease</CardDescription>
+      </CardHeader>
 
-          {/* Booking Form */}
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                {!isRegistered ? "Register & Book Appointment" : "Book Appointment"}
-              </CardTitle>
-              <CardDescription>
-                {!isRegistered 
-                  ? "Create an account to book your appointment" 
-                  : `Schedule your meeting with ${provider.name}`
+      <CardContent className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="service">Select Service</Label>
+            <Select onValueChange={setSelectedService}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a service" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Consultation">Consultation</SelectItem>
+                <SelectItem value="Follow-up">Follow-up</SelectItem>
+                <SelectItem value="Other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Select Date</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={'outline'}
+                  className={cn(
+                    'w-[240px] justify-start text-left font-normal',
+                    !date && 'text-muted-foreground'
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {date ? format(date, 'PPP') : <span>Pick a date</span>}
+                </Button>
+              </PopoverTrigger>
+
+              <PopoverContent className="w-auto p-0" align="center" side="bottom">
+                <Calendar
+                  mode="single"
+                  selected={date}
+                  onSelect={setDate}
+                  disabled={(date) => date < new Date()}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="time">Select Time</Label>
+            <Select onValueChange={setSelectedTime}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a time" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="09:00">9:00 AM</SelectItem>
+                <SelectItem value="10:00">10:00 AM</SelectItem>
+                <SelectItem value="11:00">11:00 AM</SelectItem>
+                <SelectItem value="14:00">2:00 PM</SelectItem>
+                <SelectItem value="15:00">3:00 PM</SelectItem>
+                <SelectItem value="16:00">4:00 PM</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Meeting Method</Label>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant={method === 'video' ? 'default' : 'outline'}
+                onClick={() => setMethod('video')}
+              >
+                Video Call
+              </Button>
+              <Button
+                variant={method === 'in-person' ? 'default' : 'outline'}
+                onClick={() => setMethod('in-person')}
+              >
+                In-Person
+              </Button>
+            </div>
+          </div>
+
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? 'Booking...' : isAuthenticated ? 'Book Appointment' : 'Continue to Book'}
+          </Button>
+
+          {!isAuthenticated && (
+            <p className="text-sm text-muted-foreground text-center mt-2">
+              <User className="inline h-4 w-4 mr-1" />
+              You'll need to sign in or create an account to book this appointment
+            </p>
+          )}
+        </form>
+      </CardContent>
+
+      <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {authMode === 'login' ? 'Sign In' : 'Create Account'}
+            </DialogTitle>
+            <DialogDescription>
+              {authMode === 'login' 
+                ? 'Sign in to your account to book this appointment' 
+                : 'Create an account to book this appointment'
+              }
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleAuth} className="space-y-4">
+            {authMode === 'register' && (
+              <div className="space-y-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <Button type="submit" className="w-full" disabled={authLoading}>
+              {authLoading ? 'Please wait...' : authMode === 'login' ? 'Sign In' : 'Create Account'}
+            </Button>
+
+            <div className="text-center">
+              <Button
+                type="button"
+                variant="link"
+                onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+              >
+                {authMode === 'login' 
+                  ? "Don't have an account? Sign up" 
+                  : "Already have an account? Sign in"
                 }
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {!isRegistered ? (
-                <form onSubmit={handleRegistration} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Full Name</Label>
-                    <Input
-                      id="name"
-                      type="text"
-                      required
-                      value={registrationData.name}
-                      onChange={(e) => setRegistrationData({ 
-                        ...registrationData, 
-                        name: e.target.value 
-                      })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      required
-                      value={registrationData.email}
-                      onChange={(e) => setRegistrationData({ 
-                        ...registrationData, 
-                        email: e.target.value 
-                      })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      required
-                      value={registrationData.password}
-                      onChange={(e) => setRegistrationData({ 
-                        ...registrationData, 
-                        password: e.target.value 
-                      })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone (Optional)</Label>
-                    <Input
-                      id="phone"
-                      type="tel"
-                      value={registrationData.phone}
-                      onChange={(e) => setRegistrationData({ 
-                        ...registrationData, 
-                        phone: e.target.value 
-                      })}
-                    />
-                  </div>
-                  <Button type="submit" className="w-full">
-                    Create Account & Continue
-                  </Button>
-                </form>
-              ) : (
-                <div className="space-y-6">
-                  {/* Meeting Method Selection */}
-                  <div className="space-y-3">
-                    <Label>Meeting Method</Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Button
-                        variant={selectedMethod === "video" ? "default" : "outline"}
-                        onClick={() => setSelectedMethod("video")}
-                        className="justify-start"
-                      >
-                        <Video className="mr-2 h-4 w-4" />
-                        Video Call
-                      </Button>
-                      <Button
-                        variant={selectedMethod === "in-person" ? "default" : "outline"}
-                        onClick={() => setSelectedMethod("in-person")}
-                        className="justify-start"
-                      >
-                        <MapPin className="mr-2 h-4 w-4" />
-                        In-Person
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Date Selection */}
-                  <div className="space-y-3">
-                    <Label>Select Date</Label>
-                    <Calendar
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={setSelectedDate}
-                      disabled={(date) => date < new Date() || date.getDay() === 0} // Disable past dates and Sundays
-                      className="rounded-md border"
-                    />
-                  </div>
-
-                  {/* Time Selection */}
-                  {selectedDate && (
-                    <div className="space-y-3">
-                      <Label>Available Times</Label>
-                      {availableTimes.length > 0 ? (
-                        <div className="grid grid-cols-2 gap-2">
-                          {availableTimes.map((time) => (
-                            <Button
-                              key={time}
-                              variant={selectedTime === time ? "default" : "outline"}
-                              onClick={() => setSelectedTime(time)}
-                              className="justify-center"
-                            >
-                              <Clock className="mr-2 h-4 w-4" />
-                              {formatTime(time)}
-                            </Button>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          No available times for this date.
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Booking Summary */}
-                  {selectedDate && selectedTime && (
-                    <div className="space-y-3 p-4 bg-accent/50 rounded-md">
-                      <h3 className="font-semibold">Booking Summary</h3>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span>Provider:</span>
-                          <span>{provider.name}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Service:</span>
-                          <span>{provider.specialty}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Date:</span>
-                          <span>{selectedDate.toLocaleDateString()}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Time:</span>
-                          <span>{formatTime(selectedTime)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Method:</span>
-                          <span className="capitalize">{selectedMethod}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <Button
-                    onClick={handleBooking}
-                    disabled={!selectedDate || !selectedTime || isBooking}
-                    className="w-full"
-                  >
-                    {isBooking ? "Booking..." : "Book Appointment"}
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 };
 
