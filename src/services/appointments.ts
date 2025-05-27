@@ -118,8 +118,10 @@ export const createAppointment = async (
   service: string,
   date: string,
   time: string,
-  method: 'video' | 'in-person'
-): Promise<boolean> => {
+  method: 'video' | 'in-person',
+  requiresPayment: boolean = false,
+  amount?: number
+): Promise<{ success: boolean; appointmentId?: string; requiresPayment?: boolean; amount?: number }> => {
   try {
     const user = await getCurrentUser();
     if (!user) throw new Error('User not authenticated');
@@ -191,10 +193,15 @@ export const createAppointment = async (
     const leadCreated = await createLeadFromAppointment(data, providerId);
     console.log('Lead created:', leadCreated);
 
-    return true;
+    return { 
+      success: true, 
+      appointmentId: data.id, 
+      requiresPayment, 
+      amount 
+    };
   } catch (error) {
     console.error('Error creating appointment:', error);
-    return false;
+    return { success: false };
   }
 };
 

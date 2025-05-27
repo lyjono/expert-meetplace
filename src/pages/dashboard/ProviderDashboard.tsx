@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, MessageSquare, Users, FileText, Share } from "lucide-react";
+import { CalendarIcon, Users, User, MessageSquare, FileText, Calendar, DollarSign } from 'lucide-react';
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { getLeadCounts } from "@/services/leads";
@@ -224,6 +224,12 @@ const ProviderDashboard = () => {
                 <Link to="/dashboard/provider/appointments">
                   <Calendar className="mr-2 h-4 w-4" />
                   Manage Appointments
+                </Link>
+              </Button>
+              <Button asChild className="w-full justify-start" variant="outline">
+                <Link to="/dashboard/provider/pricing">
+                  <DollarSign className="mr-2 h-4 w-4" />
+                  Pricing & Payments
                 </Link>
               </Button>
               <Button asChild className="w-full justify-start" variant="outline">

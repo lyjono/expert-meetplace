@@ -63,6 +63,44 @@ CREATE TABLE documents (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Provider services and pricing table
+CREATE TABLE provider_services (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  provider_id UUID REFERENCES provider_profiles(id) NOT NULL,
+  service_name TEXT NOT NULL,
+  description TEXT,
+  price_per_session DECIMAL(10,2) NOT NULL,
+  duration_minutes INTEGER DEFAULT 60,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Payments table
+CREATE TABLE payments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  appointment_id UUID REFERENCES appointments(id) NOT NULL,
+  stripe_payment_intent_id TEXT NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  currency TEXT DEFAULT 'usd',
+  status TEXT NOT NULL DEFAULT 'pending', -- pending, succeeded, failed, canceled
+  stripe_client_secret TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Provider payment settings table
+CREATE TABLE provider_payment_settings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  provider_id UUID REFERENCES provider_profiles(id) NOT NULL UNIQUE,
+  stripe_account_id TEXT,
+  payment_enabled BOOLEAN DEFAULT FALSE,
+  require_deposit BOOLEAN DEFAULT FALSE,
+  deposit_percentage INTEGER DEFAULT 50,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- View for user profile information (combines client and provider profiles)
 CREATE OR REPLACE VIEW users_view AS
   SELECT 
@@ -196,6 +234,57 @@ CREATE POLICY "Users can update their own documents"
 CREATE POLICY "Users can delete their own documents"
   ON documents FOR DELETE
   USING (auth.uid() = user_id);
+
+-- Provider services policies
+ALTER TABLE provider_services ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Providers can manage their own services"
+  ON provider_services FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM provider_profiles
+      WHERE user_id = auth.uid() AND id = provider_services.provider_id
+    )
+  );
+
+CREATE POLICY "Anyone can view active provider services"
+  ON provider_services FOR SELECT
+  USING (is_active = true);
+
+-- Payments policies
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Clients can view their payment records"
+  ON payments FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM appointments a
+      JOIN client_profiles cp ON a.client_id = cp.id
+      WHERE cp.user_id = auth.uid() AND a.id = payments.appointment_id
+    )
+  );
+
+CREATE POLICY "Providers can view their payment records"
+  ON payments FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM appointments a
+      JOIN provider_profiles pp ON a.provider_id = pp.id
+      WHERE pp.user_id = auth.uid() AND a.id = payments.appointment_id
+    )
+  );
+
+-- Provider payment settings policies
+ALTER TABLE provider_payment_settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Providers can manage their own payment settings"
+  ON provider_payment_settings FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM provider_profiles
+      WHERE user_id = auth.uid() AND id = provider_payment_settings.provider_id
+    )
+  );
 
 -- Storage policies for document uploads
 -- These would be configured in the Supabase dashboard
