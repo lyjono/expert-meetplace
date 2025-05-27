@@ -27,7 +27,6 @@ import ProviderDocuments from "./pages/dashboard/provider/Documents";
 import ProviderProfile from "./pages/dashboard/provider/Profile";
 import ProviderSettings from "@/pages/dashboard/provider/Settings";
 import ProviderPricing from "@/pages/dashboard/provider/Pricing";
-import PublicBooking from "@/pages/booking/PublicBooking";
 
 const queryClient = new QueryClient();
 
