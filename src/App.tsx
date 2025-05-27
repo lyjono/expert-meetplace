@@ -26,7 +26,6 @@ import ProviderMessages from "./pages/dashboard/provider/Messages";
 import ProviderDocuments from "./pages/dashboard/provider/Documents";
 import ProviderProfile from "./pages/dashboard/provider/Profile";
 import ProviderSettings from "@/pages/dashboard/provider/Settings";
-import ProviderPricing from "@/pages/dashboard/provider/Pricing";
 import PublicBooking from "@/pages/booking/PublicBooking";
 
 const queryClient = new QueryClient();
@@ -64,7 +63,6 @@ const App = () => (
           <Route path="/dashboard/provider/messages" element={<ProviderMessages />} />
           <Route path="/dashboard/provider/documents" element={<ProviderDocuments />} />
           <Route path="/dashboard/provider/profile" element={<ProviderProfile />} />
-          <Route path="/dashboard/provider/pricing" element={<ProviderPricing />} />
           <Route path="/dashboard/provider/settings" element={<ProviderSettings />} />
           <Route path="/book/:providerId" element={<PublicBooking />} />
 

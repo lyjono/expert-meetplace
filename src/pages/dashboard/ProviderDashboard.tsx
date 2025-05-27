@@ -3,11 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CalendarIcon, Users, User, MessageSquare, FileText, Calendar, DollarSign } from 'lucide-react';
+import { CalendarIcon, Users, MessageSquare, FileText, Calendar } from 'lucide-react';
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { getLeadCounts } from "@/services/leads";
-import { getSharedDocuments } from "@/services/documents"; // From Documents.tsx
+import { getSharedDocuments } from "@/services/documents";
 import { toast } from "sonner";
 
 // Fetch authenticated provider's details
@@ -61,7 +61,7 @@ const ProviderDashboard = () => {
     enabled: !!providerId,
   });
 
-  // Query for unread messages (fixed to use userId)
+  // Query for unread messages
   const { data: unreadMessages = [], isLoading: isLoadingUnread } = useQuery({
     queryKey: ["unreadMessages", userId],
     queryFn: async () => {
@@ -96,9 +96,9 @@ const ProviderDashboard = () => {
     enabled: !!userId,
   });
 
-  // Calculate documents requiring review (placeholder logic)
+  // Calculate documents requiring review
   const documentsToReview = sharedDocuments.filter(
-    (doc: any) => doc.status === "pending_review" // Adjust based on schema
+    (doc: any) => doc.status === "pending_review"
   ).length;
 
   // Calculate next appointment time
@@ -214,6 +214,8 @@ const ProviderDashboard = () => {
           </CardContent>
         </Card>
         <Card className="md:col-span-1">
+
+
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
             <CardDescription>Common tasks for providers</CardDescription>
@@ -224,12 +226,6 @@ const ProviderDashboard = () => {
                 <Link to="/dashboard/provider/appointments">
                   <Calendar className="mr-2 h-4 w-4" />
                   Manage Appointments
-                </Link>
-              </Button>
-              <Button asChild className="w-full justify-start" variant="outline">
-                <Link to="/dashboard/provider/pricing">
-                  <DollarSign className="mr-2 h-4 w-4" />
-                  Pricing & Payments
                 </Link>
               </Button>
               <Button asChild className="w-full justify-start" variant="outline">

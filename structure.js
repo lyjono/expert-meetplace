@@ -1,35 +1,48 @@
 import { readdirSync, statSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { join, extname } from 'path';
 
-// Function to recursively get the file structure
-function getFileStructure(dir, indent = '') {
-  const files = readdirSync(dir); // Read the directory contents
+// Directories to skip
+const SKIP_FOLDERS = ['node_modules', '.git', 'dist', 'build', '__pycache__'];
+
+// File extensions to include
+const INCLUDE_EXTENSIONS = ['.ts', '.js', '.tsx', '.jsx', '.html', '.css', '.json'];
+
+function isFileTypeIncluded(filename) {
+  return INCLUDE_EXTENSIONS.includes(extname(filename));
+}
+
+function getFileStructure(dir, indent = '', depth = 0) {
+  if (depth > 4) return '';
+
   let structure = '';
+  const files = readdirSync(dir);
 
-  files.forEach((file) => {
+  for (const file of files) {
     const filePath = join(dir, file);
-    const stats = statSync(filePath); // Get file/directory stats
+    const stats = statSync(filePath);
 
     if (stats.isDirectory()) {
-      // If it's a directory, add it to the structure and recurse
+      if (SKIP_FOLDERS.includes(file)) continue;
+
       structure += `${indent}📁 ${file}/\n`;
-      structure += getFileStructure(filePath, indent + '  ');
+      structure += getFileStructure(filePath, indent + '  ', depth + 1);
     } else {
-      // If it's a file, add it to the structure
+      if (!isFileTypeIncluded(file)) continue;
+
       structure += `${indent}📄 ${file}\n`;
     }
-  });
+  }
 
   return structure;
 }
 
-// Root directory of your project
+// Start from current directory
 const rootDir = './';
 const fileStructure = getFileStructure(rootDir);
 
-// Output the file structure
+// Output to console
 console.log(fileStructure);
 
-// Optionally, save the structure to a file
+// Save to file
 writeFileSync('file_structure.txt', fileStructure);
 console.log('File structure saved to file_structure.txt');
