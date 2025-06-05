@@ -76,13 +76,19 @@ export const VideoCall: React.FC<VideoCallProps> = ({ roomId, userName, onEndCal
 
         setupSignaling(roomId);
 
-      } catch (error) {
-        console.error("Error initializing video call:", error);
-        setPermissionsError("Could not initialize video call. Please try again.");
-        toast.error("Could not initialize video call");
-        setIsConnecting(false);
-      }
-    };
+      }  catch (error) {
+          console.error("Error initializing video call:", error);
+          if (error instanceof DOMException && error.name === 'NotReadableError') {
+            const specificMessage = "Could not access camera/microphone. Another application or browser tab might be using it. Please close any other apps/tabs using your camera/mic and try again.";
+            setPermissionsError(specificMessage);
+            toast.error(specificMessage);
+          } else {
+            setPermissionsError("Could not initialize video call. Please try again.");
+            toast.error("Could not initialize video call");
+          }
+          setIsConnecting(false);
+        }
+      };
 
     initCall();
 
@@ -222,7 +228,7 @@ export const VideoCall: React.FC<VideoCallProps> = ({ roomId, userName, onEndCal
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 relative bg-muted rounded-md overflow-hidden">
-        <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+        <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover rounded-md" />
 
         {isConnecting && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
