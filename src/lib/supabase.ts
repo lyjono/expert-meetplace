@@ -2,6 +2,10 @@ import { createClient } from '@supabase/supabase-js';
 
 // Get environment variables
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://iquwxwsmkhsneqsdaurh.supabase.co';
+import { createClient } from '@supabase/supabase-js';
+
+// Get environment variables
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://iquwxwsmkhsneqsdaurh.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxdXd4d3Nta2hzbmVxc2RhdXJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDEyOTc2MjcsImV4cCI6MjA1Njg3MzYyN30.oxh6d4xZv0sqmJYnqRzdPRM-BW3FHd0nMxxahk8yK70';
 
 // Create the Supabase client
