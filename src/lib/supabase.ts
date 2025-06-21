@@ -1,7 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
 
-// Get environment variables
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://iquwxwsmkhsneqsdaurh.supabase.co';
 import { createClient } from '@supabase/supabase-js';
 
 // Get environment variables
