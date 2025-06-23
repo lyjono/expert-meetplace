@@ -161,6 +161,7 @@
         📄 Documents.tsx
         📄 Leads.tsx
         📄 Messages.tsx
+        📄 Pricing.tsx
         📄 Profile.tsx
         📄 Settings.tsx
     📁 services/
@@ -173,7 +174,7 @@
     📄 experts.ts
     📄 leads.ts
     📄 messages.ts
-    📄 providerSubscriptions.ts
+    📄 payments.ts
     📄 realTimeMessages.ts
     📄 videoCalls.ts
   📄 vite-env.d.ts

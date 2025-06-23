@@ -1,0 +1,102 @@
+| table_name            | column_name         | data_type                   |
+| --------------------- | ------------------- | --------------------------- |
+| appointments          | id                  | uuid                        |
+| appointments          | client_id           | uuid                        |
+| appointments          | provider_id         | uuid                        |
+| appointments          | service             | text                        |
+| appointments          | date                | date                        |
+| appointments          | time                | time without time zone      |
+| appointments          | status              | text                        |
+| appointments          | method              | text                        |
+| appointments          | room_id             | text                        |
+| appointments          | created_at          | timestamp with time zone    |
+| appointments          | updated_at          | timestamp with time zone    |
+| appointments          | video_call_room_id  | text                        |
+| appointments          | price               | numeric                     |
+| appointments          | payment_status      | text                        |
+| client_profiles       | id                  | uuid                        |
+| client_profiles       | user_id             | uuid                        |
+| client_profiles       | name                | text                        |
+| client_profiles       | email               | text                        |
+| client_profiles       | created_at          | timestamp with time zone    |
+| client_profiles       | updated_at          | timestamp with time zone    |
+| client_profiles       | phone               | text                        |
+| client_profiles       | address             | text                        |
+| client_profiles       | city                | text                        |
+| client_profiles       | state               | text                        |
+| client_profiles       | zip                 | text                        |
+| client_profiles       | bio                 | text                        |
+| client_profiles       | avatar_url          | text                        |
+| client_profiles       | country             | character varying           |
+| client_settings       | id                  | uuid                        |
+| client_settings       | user_id             | uuid                        |
+| client_settings       | email_notifications | boolean                     |
+| client_settings       | sms_notifications   | boolean                     |
+| client_settings       | marketing_emails    | boolean                     |
+| client_settings       | profile_visibility  | boolean                     |
+| client_settings       | activity_tracking   | boolean                     |
+| client_settings       | two_factor_auth     | boolean                     |
+| client_settings       | timezone            | text                        |
+| client_settings       | created_at          | timestamp with time zone    |
+| client_settings       | updated_at          | timestamp with time zone    |
+| documents             | id                  | uuid                        |
+| documents             | user_id             | uuid                        |
+| documents             | name                | text                        |
+| documents             | file_path           | text                        |
+| documents             | file_type           | text                        |
+| documents             | shared_with         | ARRAY                       |
+| documents             | created_at          | timestamp with time zone    |
+| documents             | updated_at          | timestamp with time zone    |
+| leads                 | id                  | uuid                        |
+| leads                 | name                | text                        |
+| leads                 | email               | text                        |
+| leads                 | phone               | text                        |
+| leads                 | service             | text                        |
+| leads                 | status              | text                        |
+| leads                 | date                | text                        |
+| leads                 | message             | text                        |
+| leads                 | provider_id         | uuid                        |
+| leads                 | created_at          | timestamp with time zone    |
+| leads                 | updated_at          | timestamp with time zone    |
+| leads                 | notes               | text                        |
+| messages              | id                  | uuid                        |
+| messages              | topic               | text                        |
+| messages              | extension           | text                        |
+| messages              | sender_id           | uuid                        |
+| messages              | receiver_id         | uuid                        |
+| messages              | payload             | jsonb                       |
+| messages              | content             | text                        |
+| messages              | event               | text                        |
+| messages              | read                | boolean                     |
+| messages              | private             | boolean                     |
+| messages              | created_at          | timestamp with time zone    |
+| messages              | updated_at          | timestamp without time zone |
+| messages              | inserted_at         | timestamp without time zone |
+| messages              | attachment_url      | text                        |
+| messages              | attachment_name     | text                        |
+| messages              | id                  | uuid                        |
+| messages              | attachment_type     | text                        |
+| messages              | is_video_call       | boolean                     |
+| provider_availability | id                  | uuid                        |
+| provider_availability | provider_id         | uuid                        |
+| provider_availability | day_of_week         | integer                     |
+| provider_availability | start_time          | time without time zone      |
+| provider_availability | end_time            | time without time zone      |
+| provider_availability | created_at          | timestamp with time zone    |
+| provider_availability | updated_at          | timestamp with time zone    |
+| provider_profiles     | id                  | uuid                        |
+| provider_profiles     | user_id             | uuid                        |
+| provider_profiles     | name                | text                        |
+| provider_profiles     | email               | text                        |
+| provider_profiles     | category            | text                        |
+| provider_profiles     | specialty           | text                        |
+| provider_profiles     | years_experience    | integer                     |
+| provider_profiles     | rating              | numeric                     |
+| provider_profiles     | image_url           | text                        |
+| provider_profiles     | created_at          | timestamp with time zone    |
+| provider_profiles     | updated_at          | timestamp with time zone    |
+| provider_profiles     | address             | text                        |
+| provider_profiles     | city                | text                        |
+| provider_profiles     | state               | text                        |
+| provider_profiles     | zip                 | text                        |
+| provider_profiles     | phone               | text                        |

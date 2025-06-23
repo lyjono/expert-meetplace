@@ -1,7 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
 import { createLeadFromMessage } from '@/services/leads';
-import { checkProviderLimit, updateProviderUsage } from '@/services/providerSubscriptions';
 
 export interface Message {
   id: string;
@@ -27,18 +26,6 @@ export const sendMessage = async (
   try {
     const user = await getCurrentUser();
     if (!user) throw new Error('User not authenticated');
-
-    // Check if sender is a provider
-    const { data: providerProfile, error: providerProfileError } = await supabase
-      .from('provider_profiles')
-      .select('id')
-      .eq('user_id', senderId)
-      .single();
-
-    if (providerProfile) {
-      // Check chat limit and unique partner limit
-      await checkProviderLimit(providerProfile.id, 'chat', { receiverId });
-    }
 
     let attachmentUrl = null;
     let attachmentName = null;
@@ -76,12 +63,6 @@ export const sendMessage = async (
       });
 
     if (error) throw error;
-
-    // Update provider usage if applicable
-    if (providerProfile) {
-      await updateProviderUsage(providerProfile.id, 'chat', { receiverId });
-    }
-    
     return true;
   } catch (error) {
     console.error('Error sending message:', error);

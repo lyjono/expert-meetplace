@@ -2,7 +2,6 @@ import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
 import { createLeadFromAppointment } from '@/services/leads'; // Import the lead creation function
 import { startVideoCall } from '@/services/realTimeMessages'; // Import startVideoCall
-import { checkProviderLimit, updateProviderUsage } from '@/services/providerSubscriptions';
 
 export interface Appointment {
   id: string;
@@ -122,7 +121,7 @@ export const createAppointment = async (
   method: 'video' | 'in-person',
   requiresPayment: boolean = false,
   amount?: number
-): Promise<{ success: boolean; appointmentId?: string; requiresPayment?: boolean; amount?: number; error?: string }> => {
+): Promise<{ success: boolean; appointmentId?: string; requiresPayment?: boolean; amount?: number }> => {
   try {
     const user = await getCurrentUser();
     if (!user) throw new Error('User not authenticated');
@@ -130,15 +129,18 @@ export const createAppointment = async (
     // Fetch client profile
     const { data: clientProfile, error: clientProfileError } = await supabase
       .from('client_profiles')
-      .select('id, user_id')
+      .select('id, user_id') // Include user_id
       .eq('user_id', user.id)
       .single();
 
     if (clientProfileError) {
-      console.error('Error fetching client profile:', clientProfileError);
+      console.error('Error getting client profile:', clientProfileError);
       throw clientProfileError;
     }
-    if (!clientProfile) throw new Error('Client profile not found');
+    if (!clientProfile) {
+      console.error('Client profile not found');
+      throw new Error('Client profile not found');
+    }
 
     // Fetch provider profile to get user_id
     const { data: providerProfile, error: providerProfileError } = await supabase
@@ -148,19 +150,21 @@ export const createAppointment = async (
       .single();
 
     if (providerProfileError) {
-      console.error('Error fetching provider profile:', providerProfileError);
+      console.error('Error getting provider profile:', providerProfileError);
       throw providerProfileError;
     }
-    if (!providerProfile) throw new Error('Provider profile not found');
-
-    // Check appointment limit
-    console.log(`Checking appointment limit for provider ${providerId}`);
-    await checkProviderLimit(providerId, 'appointment');
+    if (!providerProfile) {
+      console.error('Provider profile not found');
+      throw new Error('Provider profile not found');
+    }
 
     let videoCallRoomId: string | null = null;
     if (method === 'video') {
+      // Use user_id values for client and provider
       videoCallRoomId = await startVideoCall(clientProfile.user_id, providerProfile.user_id);
-      if (!videoCallRoomId) throw new Error('Failed to create video call room');
+      if (!videoCallRoomId) {
+        throw new Error('Failed to create video call room');
+      }
     }
 
     const { data, error } = await supabase
@@ -173,44 +177,31 @@ export const createAppointment = async (
         time,
         status: 'pending',
         method,
-        video_call_room_id: videoCallRoomId,
+        video_call_room_id: videoCallRoomId
       })
       .select()
       .single();
 
     if (error) {
-      console.error('Error inserting appointment:', error);
+      console.error('Supabase error creating appointment:', error);
       throw error;
     }
 
-    // Update provider usage
-    console.log(`Updating appointment usage for provider ${providerId}`);
-    const usageUpdated = await updateProviderUsage(providerId, 'appointment');
-    if (!usageUpdated) {
-      console.error(`Failed to update provider usage for ${providerId}`);
-    }
+    console.log('Appointment created successfully:', data);
 
-    // Create lead
+    // Create a lead for this appointment
     const leadCreated = await createLeadFromAppointment(data, providerId);
-    if (!leadCreated) {
-      console.warn(`Failed to create lead for appointment ${data.id}`);
-    }
+    console.log('Lead created:', leadCreated);
 
-    return {
-      success: true,
-      appointmentId: data.id,
-      requiresPayment,
-      amount,
+    return { 
+      success: true, 
+      appointmentId: data.id, 
+      requiresPayment, 
+      amount 
     };
   } catch (error) {
-    console.error('Error creating appointment:', {
-      message: (error as Error).message,
-      stack: (error as Error).stack,
-    });
-    return {
-      success: false,
-      error: (error as Error).message || 'Failed to create appointment',
-    };
+    console.error('Error creating appointment:', error);
+    return { success: false };
   }
 };
 

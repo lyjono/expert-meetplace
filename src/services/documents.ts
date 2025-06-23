@@ -2,7 +2,6 @@
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase'; // Ensure this path is correct for your project
 import { User } from '@supabase/supabase-js'; // Optional: For type safety with user object
-import { checkProviderLimit, updateProviderUsage } from './providerSubscriptions';
 
 /**
  * Represents a document record in the database and storage.
@@ -18,7 +17,6 @@ export interface Document {
   shared_with?: string[]; // Optional array of user UUIDs the document is shared with
 isChatDocument?: boolean; // Optional flag to identify chat documents
   message_id?: string; // Optional: Store message ID for reference
- file_size_mb?: number;
 }
 
 /**
@@ -162,91 +160,58 @@ export const uploadDocument = async (file: File, name?: string): Promise<boolean
     const user = await getCurrentUser();
     if (!user) throw new Error('User not authenticated');
 
-    // Check if user is a provider
-    const { data: provider, error: providerError } = await supabase
-      .from('provider_profiles')
-      .select('id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (providerError && providerError.code !== 'PGRST116') {
-      console.error('Error checking provider profile:', providerError);
-      throw providerError;
-    }
-
-    // Calculate file size in MB
-    const fileSizeMb = file.size / (1024 * 1024); // Convert bytes to MB
-    console.log(`Uploading document for user ${user.id}, size: ${fileSizeMb.toFixed(2)} MB`);
-
-    if (provider) {
-      // Check storage limit
-      console.log(`Checking storage for provider ${provider.id}`);
-      await checkProviderLimit(provider.id, 'storage', { storageSizeMb: fileSizeMb });
-    }
-
-    // Use provided name or default to file's
+    // Use provided name or default to the file's original name
     const fileName = name || file.name;
+    // Construct a unique file path in storage
     const filePath = `documents/${user.id}/${Date.now()}_${fileName}`;
 
-    // Upload file to storage
-    console.log(`Uploading file to storage: ${filePath}`);
+    // 1. Upload file to storage
     const { error: uploadError } = await supabase.storage
-      .from('documents')
+      .from('documents') // Make sure 'documents' is your bucket name
       .upload(filePath, file, {
-        cacheControl: '3600',
-        upsert: false,
+          cacheControl: '3600', // Optional: Cache control settings
+          upsert: false          // Optional: Set to true to overwrite if path exists
       });
 
     if (uploadError) {
-      console.error('Storage upload error:', uploadError);
-      throw uploadError;
+        console.error('Storage upload error:', uploadError);
+        throw uploadError;
     }
 
-    // Get public URL
+    // 2. Get the public URL of the uploaded file
     const { data: urlData } = supabase.storage
       .from('documents')
       .getPublicUrl(filePath);
 
+    // Note: Supabase getPublicUrl doesn't throw an error if the file doesn't exist,
+    // but since we just uploaded it, it should be there.
     if (!urlData?.publicUrl) {
-      console.error('Failed to get public URL for file:', filePath);
-      throw new Error('Failed to get public URL');
+        throw new Error('Failed to get public URL for uploaded file.');
     }
+    const publicUrl = urlData.publicUrl;
 
-    // Insert into documents table
-    console.log(`Inserting document: '${fileName}', size: ${Math.ceil(fileSizeMb)} MB`);
+    // 3. Add record to the database table 'documents'
     const { error: dbError } = await supabase
       .from('documents')
       .insert({
-        user_id: user.id,
-        name: fileName,
-        file_path: urlData.publicUrl,
-        file_type: file.type,
-        shared_with: [],
-        file_size_mb: Math.ceil(fileSizeMb),
+        user_id: user.id,       // Owner of the document
+        name: fileName,         // Name of the file
+        file_path: publicUrl,   // Public URL from storage
+        file_type: file.type,   // MIME type
+        shared_with: []         // Initialize shared_with as empty array
       });
 
     if (dbError) {
-      console.error('Database insert error:', dbError);
-      // Clean up storage
-      await supabase.storage.from('documents').remove([filePath]);
-      throw dbError;
+        console.error('Database insert error:', dbError);
+        // Optional: Attempt to clean up storage if DB insert fails
+        await supabase.storage.from('documents').remove([filePath]);
+        throw dbError;
     }
 
-    // Update provider usage if applicable
-    if (provider) {
-      console.log(`Updating provider ${provider.id} usage`);
-      const usageUpdated = await updateProviderUsage(provider.id, 'storage', { storageSizeMb: fileSizeMb });
-      if (!usageUpdated) {
-        console.error(`Failed to update usage for ${provider.id}`);
-        // Log warning, but don't fail the upload
-      }
-    }
-
-    console.log(`File uploaded: '${fileName}' successfully`);
-    return true;
-  } catch (err) {
-    console.error('Upload error:', err);
-    return false;
+    return true; // Success
+  } catch (error) {
+    console.error('Error uploading document:', error);
+    return false; // Failure
   }
 };
 
